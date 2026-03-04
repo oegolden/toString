@@ -10,19 +10,20 @@ ARCHITECTURE OVERVIEW:
   This file handles ALL user-facing display and interaction.
   It calls functions from client.py (currently mocked by mock_client.py).
 
-HOW TO INTEGRATE WITH client.py (for backend teammates):
-  1. Ensure client.py exposes the same functions as mock_client.py
+HOW TO INTEGRATE WITH client.py (for backend when working):
+  1. client.py should have the same functions as mock_client.py
   2. Change the import line below from:
          import mock_client as client
      to:
          import client
   3. All functions called from this file are documented in mock_client.py
      with the expected request/response format.
+  4. Look for "BACKEND TO FIX" comments to see where backend functions are used.
 
-LAYOUT STRUCTURE:
-  App (Tk root)
+LAYOUT:
+  App (Tkinter root)
   └── LoginFrame    — shown on startup; handles login + register
-  └── MainFrame     — shown after login; the main app shell
+  └── MainFrame     — shown after login; the main app
        ├── Sidebar  — board list + subscribe/create controls
        └── FeedFrame
             ├── FeedView    — scrollable list of posts for selected board
@@ -43,15 +44,15 @@ from tkinter import ttk, messagebox, scrolledtext
 import mock_client as client   # ← SWAP TO: import client  when backend is ready
 
 # colors
-BG_DARK     = "#a2a4a8"   # Main background
-BG_MEDIUM   = "#6d819d"   # Cards, sidebar
-BG_LIGHT    = "#6d9bda"   # Input fields, hover states
-ACCENT      = "#ff4500"   # Reddit orange-red
-ACCENT_DARK = "#cc3700"   # Hover for accent buttons
+BG_DARK     = "#e4e4e4"   # Main background
+BG_MEDIUM   = "#f7f7f7"   # Cards, sidebar
+BG_LIGHT    = "#abb5c2"   # Input fields, hover states
+ACCENT      = "#060606"   
+ACCENT_DARK = "#000000"   
 TEXT_PRI    = "#050709"   # Primary text
 TEXT_SEC    = "#010101"   # Secondary / timestamps
 TEXT_MUTED  = "#000000"   # Dividers, placeholders
-BORDER      = "#002045"   # Card borders
+BORDER      = "#626262"   # Card borders
 SUCCESS     = "#3fb950"   # Subscribe / success green
 DANGER      = "#f85149"   # Delete / error red
 
@@ -148,8 +149,7 @@ class LoginFrame(tk.Frame):
 
     def _build(self):
         # Centered card
-        card = tk.Frame(self, bg=BG_MEDIUM, bd=0, relief="flat",
-                        highlightbackground=BORDER, highlightthickness=1)
+        card = tk.Frame(self, bg=BG_MEDIUM, bd=1, relief="flat")
         card.place(relx=0.5, rely=0.5, anchor="center", width=420, height=480)
 
         # Logo / title
@@ -165,13 +165,13 @@ class LoginFrame(tk.Frame):
 
         self.login_tab_btn = tk.Button(
             tab_row, text="Log In", font=FONT_BTN,
-            bg=BG_MEDIUM, fg=ACCENT, relief="flat", bd=0, cursor="hand2",
+            bg=BG_MEDIUM, relief="flat", bd=1, cursor="hand2",
             command=lambda: self._switch_tab("login"))
         self.login_tab_btn.pack(side="left", padx=(0, 16))
 
         self.reg_tab_btn = tk.Button(
             tab_row, text="Register", font=FONT_BTN,
-            bg=BG_MEDIUM, fg=TEXT_SEC, relief="flat", bd=0, cursor="hand2",
+            bg=BG_MEDIUM, relief="flat", bd=0, cursor="hand2",
             command=lambda: self._switch_tab("register"))
         self.reg_tab_btn.pack(side="left")
 
@@ -255,7 +255,7 @@ class LoginFrame(tk.Frame):
             self.err_var.set("Please enter both username and password.")
             return
         try:
-            # ── BACKEND CALL ──────────────────────────────────────────────
+            # ── BACKEND TO FIX ──────────────────────────────────────────────
             # client.login() sends credentials over socket and returns:
             # {"username": str, "role": "user"|"moderator"|"admin"}
             result = client.login(username, password)
@@ -275,13 +275,772 @@ class LoginFrame(tk.Frame):
             self.err_var.set("Passwords do not match.")
             return
         try:
-            # ── BACKEND CALL ──────────────────────────────────────────────
+            # ── BACKEND TO FIX ──────────────────────────────────────────────
             # client.register() sends new credentials to server, returns user dict
             result = client.register(username, password)
             # ─────────────────────────────────────────────────────────────
             self.app.on_login_success(result["username"], result["role"])
         except Exception as e:
             self.err_var.set(str(e))
+
+# ═══════════════════════════════════════════════════════════════
+#  MainFrame — Post-login shell: sidebar + feed area
+# ═══════════════════════════════════════════════════════════════
+class MainFrame(tk.Frame):
+    """
+    The main app layout after login.
+    Contains the Sidebar (left) and FeedFrame (right).
+    Manages which board is currently selected.
+    """
+    def __init__(self, master: App):
+        super().__init__(master, bg=BG_DARK)
+        self.app = master
+        self._build()
+
+    def _build(self):
+        # ── Top nav bar ─────────────────────────────────────────
+        nav = tk.Frame(self, bg=BG_MEDIUM,
+                       highlightbackground=BORDER, highlightthickness=1)
+        nav.pack(fill="x", side="top")
+
+        tk.Label(nav, text=".toString()", font=("Georgia", 16, "bold"),
+                 fg=ACCENT, bg=BG_MEDIUM).pack(side="left", padx=16, pady=10)
+
+        # User info + logout (right side of nav)
+        tk.Label(nav, text=f"👤 {self.app.current_user}  [{self.app.user_role}]",
+                 font=FONT_SMALL, fg=TEXT_SEC, bg=BG_MEDIUM).pack(side="right", padx=8)
+        make_button(nav, "Log Out", self.app.logout,
+                    bg=BG_LIGHT, fg=TEXT_SEC, padx=10, pady=4).pack(side="right", padx=8, pady=8)
+
+        # ── Body: sidebar + feed ─────────────────────────────────
+        body = tk.Frame(self, bg=BG_DARK)
+        body.pack(fill="both", expand=True)
+
+        # Sidebar (fixed width)
+        self.sidebar = Sidebar(body, app=self.app, on_board_select=self._on_board_selected)
+        self.sidebar.pack(side="left", fill="y")
+
+        # Vertical separator
+        tk.Frame(body, bg=BORDER, width=1).pack(side="left", fill="y")
+
+        # Feed area (expands to fill remaining space)
+        self.feed_frame = FeedFrame(body, app=self.app)
+        self.feed_frame.pack(side="left", fill="both", expand=True)
+
+        # Show home feed on startup
+        self._on_board_selected(None)
+
+    def _on_board_selected(self, board: dict):
+        """
+        Called by Sidebar when user clicks a board.
+        board=None means "Home" (all subscribed boards).
+        """
+        self.feed_frame.show_feed(board)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Sidebar — Board list and navigation
+# ═══════════════════════════════════════════════════════════════
+class Sidebar(tk.Frame):
+    """
+    Left navigation panel.
+    Shows: Home, subscribed boards, all boards (discover), create board.
+    """
+    def __init__(self, master, app: App, on_board_select):
+        super().__init__(master, bg=BG_MEDIUM, width=240)
+        self.pack_propagate(False)
+        self.app             = app
+        self.on_board_select = on_board_select
+        self._build()
+
+    def _build(self):
+        # Scrollable inner frame
+        canvas = tk.Canvas(self, bg=BG_MEDIUM, bd=0, highlightthickness=0, width=240)
+        scrollbar = tk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self.inner = tk.Frame(canvas, bg=BG_MEDIUM)
+
+        self.inner.bind("<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=self.inner, anchor="nw", width=240)
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        self._populate()
+
+    def _populate(self):
+        """(Re)build the sidebar content. Call after subscribe/unsubscribe."""
+        for w in self.inner.winfo_children():
+            w.destroy()
+
+        pad = {"padx": 16, "pady": 3}
+
+        # ── Home ────────────────────────────────────────────────
+        self._section_label("FEEDS")
+        self._nav_btn("🏠  Home", lambda: self.on_board_select(None))
+
+        tk.Frame(self.inner, bg=BORDER, height=1).pack(fill="x", **pad)
+
+        # ── My Boards (subscribed) ───────────────────────────────
+        self._section_label("MY BOARDS")
+        # ── BACKEND TO FIX ─────────────────────────────────────────
+        # client.get_subscribed_boards() returns list of board dicts
+        subs = client.get_subscribed_boards(self.app.current_user)
+        # ─────────────────────────────────────────────────────────
+        if subs:
+            for board in subs:
+                self._board_btn(board)
+        else:
+            make_label(self.inner, "Not subscribed to any boards.",
+                       font=FONT_SMALL, fg=TEXT_MUTED).pack(**pad, anchor="w")
+
+        tk.Frame(self.inner, bg=BORDER, height=1).pack(fill="x", **pad)
+
+        # ── Discover All Boards ──────────────────────────────────
+        self._section_label("DISCOVER")
+        # ── BACKEND TO FIX ─────────────────────────────────────────
+        # client.get_all_boards() returns complete list of board dicts
+        all_boards = client.get_all_boards()
+        # ─────────────────────────────────────────────────────────
+        sub_ids = {b["id"] for b in subs}
+        for board in all_boards:
+            if board["id"] not in sub_ids:
+                self._discover_board_btn(board)
+
+        tk.Frame(self.inner, bg=BORDER, height=1).pack(fill="x", **pad)
+
+        # ── Create Board ─────────────────────────────────────────
+        self._section_label("CREATE")
+        make_button(self.inner, "+ New Board", self._open_create_board,
+                    bg=ACCENT, pady=6).pack(fill="x", padx=16, pady=4)
+
+    def _section_label(self, text: str):
+        make_label(self.inner, text, font=("Helvetica", 9, "bold"),
+                   fg=TEXT_MUTED).pack(anchor="w", padx=16, pady=(10, 2))
+
+    def _nav_btn(self, text: str, command):
+        btn = tk.Button(self.inner, text=text, font=FONT_BODY,
+                        bg=BG_MEDIUM, fg=TEXT_PRI, activebackground=BG_LIGHT,
+                        relief="flat", anchor="w", cursor="hand2",
+                        command=command, bd=0)
+        btn.pack(fill="x", padx=8, pady=1, ipady=4)
+        btn.bind("<Enter>", lambda e: btn.config(bg=BG_LIGHT))
+        btn.bind("<Leave>", lambda e: btn.config(bg=BG_MEDIUM))
+
+    def _board_btn(self, board: dict):
+        """Clickable subscribed board button in sidebar."""
+        row = tk.Frame(self.inner, bg=BG_MEDIUM)
+        row.pack(fill="x", padx=8, pady=1)
+
+        btn = tk.Button(row,
+                        text=f"  {board['name']}",
+                        font=FONT_BODY, bg=BG_MEDIUM, fg=TEXT_PRI,
+                        activebackground=BG_LIGHT, relief="flat",
+                        anchor="w", cursor="hand2", bd=0,
+                        command=lambda b=board: self.on_board_select(b))
+        btn.pack(side="left", fill="x", expand=True, ipady=3)
+        btn.bind("<Enter>", lambda e: btn.config(bg=BG_LIGHT))
+        btn.bind("<Leave>", lambda e: btn.config(bg=BG_MEDIUM))
+
+    def _discover_board_btn(self, board: dict):
+        """Board not yet subscribed — shown in Discover section with Join button."""
+        row = tk.Frame(self.inner, bg=BG_MEDIUM)
+        row.pack(fill="x", padx=8, pady=1)
+
+        tk.Label(row, text=f"  {board['name']}", font=FONT_SMALL,
+                 fg=TEXT_SEC, bg=BG_MEDIUM, anchor="w").pack(side="left", fill="x", expand=True)
+
+        def join(b=board):
+            try:
+                # ── BACKEND TO FIX ──────────────────────────────────
+                # client.subscribe_board() sends SUBSCRIBE request to server
+                client.subscribe_board(self.app.current_user, b["id"])
+                # ──────────────────────────────────────────────────
+                self._populate()
+                self.on_board_select(b)
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+
+        make_button(row, "Join", join, bg=SUCCESS, pady=2, padx=6,
+                    font=FONT_SMALL).pack(side="right", padx=4, pady=2)
+
+    def _open_create_board(self):
+        """Popup dialog to create a new board."""
+        win = tk.Toplevel(self, bg=BG_MEDIUM)
+        win.title("Create Board")
+        win.geometry("380x260")
+        win.resizable(False, False)
+        win.grab_set()
+
+        make_label(win, "Create a New Board", font=FONT_BOARD).pack(pady=(20, 4))
+        make_label(win, "Name (will add r/ prefix)", font=FONT_SMALL, fg=TEXT_SEC).pack(anchor="w", padx=24)
+        name_e = tk.Entry(win, font=FONT_INPUT, bg=BG_LIGHT, fg=TEXT_PRI,
+                          insertbackground=TEXT_PRI, relief="flat")
+        name_e.pack(fill="x", padx=24, ipady=7, pady=4)
+
+        make_label(win, "Description", font=FONT_SMALL, fg=TEXT_SEC).pack(anchor="w", padx=24)
+        desc_e = tk.Entry(win, font=FONT_INPUT, bg=BG_LIGHT, fg=TEXT_PRI,
+                          insertbackground=TEXT_PRI, relief="flat")
+        desc_e.pack(fill="x", padx=24, ipady=7, pady=4)
+
+        err_lbl = make_label(win, "", font=FONT_SMALL, fg=DANGER)
+        err_lbl.pack()
+
+        def submit():
+            name = name_e.get().strip()
+            desc = desc_e.get().strip()
+            if not name:
+                err_lbl.config(text="Board name is required.")
+                return
+            try:
+                # ── BACKEND TO FIX ──────────────────────────────────
+                # client.create_board() sends CREATE_BOARD to server
+                new_board = client.create_board(self.app.current_user, name, desc)
+                # ──────────────────────────────────────────────────
+                win.destroy()
+                self._populate()
+                self.on_board_select(new_board)
+            except Exception as e:
+                err_lbl.config(text=str(e))
+
+        make_button(win, "CREATE BOARD", submit).pack(pady=8, ipadx=10)
+
+    def refresh(self):
+        """Public method — call this to force sidebar to reload board list."""
+        self._populate()
+
+
+# ═══════════════════════════════════════════════════════════════
+#  FeedFrame — Right panel: feed list or post detail
+# ═══════════════════════════════════════════════════════════════
+class FeedFrame(tk.Frame):
+    """
+    Right-side content area.
+    Switches between:
+      - FeedView: grid of post cards for a board (or home)
+      - PostView: single post expanded with comments
+    """
+    def __init__(self, master, app: App):
+        super().__init__(master, bg=BG_DARK)
+        self.app          = app
+        self.current_board = None  # currently selected board dict
+
+    def show_feed(self, board: dict):
+        """Display the feed for a given board (or home if board=None)."""
+        self.current_board = board
+        for w in self.winfo_children():
+            w.destroy()
+        FeedView(self, app=self.app, board=board,
+                 on_post_click=self._open_post).pack(fill="both", expand=True)
+
+    def _open_post(self, message: dict, board: dict):
+        """Open a post's detail view with comments."""
+        for w in self.winfo_children():
+            w.destroy()
+        PostView(self, app=self.app, message=message, board=board,
+                 on_back=lambda: self.show_feed(self.current_board)).pack(fill="both", expand=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  FeedView — Scrollable list of posts for a board
+# ═══════════════════════════════════════════════════════════════
+class FeedView(tk.Frame):
+    """
+    Shows all posts for a selected board, or the home feed (all subscribed boards).
+    Each post is rendered as a PostCard widget.
+    """
+    def __init__(self, master, app: App, board: dict, on_post_click):
+        super().__init__(master, bg=BG_DARK)
+        self.app          = app
+        self.board        = board
+        self.on_post_click = on_post_click
+        self._build()
+
+    def _build(self):
+        # ── Header ───────────────────────────────────────────────
+        header = tk.Frame(self, bg=BG_DARK)
+        header.pack(fill="x", padx=24, pady=(18, 0))
+
+        if self.board:
+            # Single board view
+            title_text = self.board["name"]
+            sub_text   = self.board.get("description", "")
+            tk.Label(header, text=title_text, font=FONT_TITLE,
+                     fg=TEXT_PRI, bg=BG_DARK).pack(anchor="w")
+            tk.Label(header, text=sub_text, font=FONT_META,
+                     fg=TEXT_SEC, bg=BG_DARK).pack(anchor="w")
+
+            # Subscribe / Unsubscribe toggle
+            # ── BACKEND TO FIX ──────────────────────────────────────
+            subs = client.get_subscribed_boards(self.app.current_user)
+            # ──────────────────────────────────────────────────────
+            sub_ids  = {b["id"] for b in subs}
+            is_subbed = self.board["id"] in sub_ids
+
+            if is_subbed:
+                make_button(header, "✓ Joined", self._unsubscribe,
+                            bg=BG_LIGHT, fg=TEXT_SEC, pady=4).pack(side="right", pady=4)
+            else:
+                make_button(header, "Join", self._subscribe,
+                            bg=SUCCESS, pady=4).pack(side="right", pady=4)
+        else:
+            # Home feed
+            tk.Label(header, text="Home", font=FONT_TITLE,
+                     fg=TEXT_PRI, bg=BG_DARK).pack(anchor="w")
+            tk.Label(header, text="Posts from boards you've joined",
+                     font=FONT_META, fg=TEXT_SEC, bg=BG_DARK).pack(anchor="w")
+
+        tk.Frame(self, bg=BORDER, height=1).pack(fill="x", padx=24, pady=10)
+
+        # ── New Post box (if subscribed) ─────────────────────────
+        if self.board:
+            # ── BACKEND TO FIX ──────────────────────────────────────
+            subs = client.get_subscribed_boards(self.app.current_user)
+            # ──────────────────────────────────────────────────────
+            if self.board["id"] in {b["id"] for b in subs}:
+                self._build_compose_box()
+
+        # ── Scrollable post list ──────────────────────────────────
+        container = tk.Frame(self, bg=BG_DARK)
+        container.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(container, bg=BG_DARK, bd=0, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        self.scroll_frame = tk.Frame(canvas, bg=BG_DARK)
+
+        self.scroll_frame.bind("<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Mouse-wheel scrolling
+        canvas.bind_all("<MouseWheel>",
+            lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        self._load_posts()
+
+    def _build_compose_box(self):
+        """Quick post composer shown at top of board feed."""
+        box = tk.Frame(self, bg=BG_MEDIUM,
+                       highlightbackground=BORDER, highlightthickness=1)
+        box.pack(fill="x", padx=24, pady=(0, 8))
+
+        make_label(box, "Create a Post", font=FONT_BODY, fg=TEXT_SEC).pack(
+            anchor="w", padx=12, pady=(8, 4))
+
+        self.compose_entry = tk.Text(box, font=FONT_INPUT, bg=BG_LIGHT, fg=TEXT_PRI,
+                                     insertbackground=TEXT_PRI, relief="flat",
+                                     height=3, wrap="word")
+        self.compose_entry.pack(fill="x", padx=12, pady=4)
+
+        err_var = tk.StringVar()
+        tk.Label(box, textvariable=err_var, font=FONT_SMALL,
+                 fg=DANGER, bg=BG_MEDIUM).pack(anchor="w", padx=12)
+
+        def post():
+            content = self.compose_entry.get("1.0", "end").strip()
+            if not content:
+                err_var.set("Message cannot be empty.")
+                return
+            try:
+                # ── BACKEND TO FIX ──────────────────────────────────
+                # client.post_message() sends POST_MESSAGE to server
+                client.post_message(self.app.current_user, self.board["id"], content)
+                # ──────────────────────────────────────────────────
+                self.compose_entry.delete("1.0", "end")
+                err_var.set("")
+                self._load_posts()   # Refresh feed
+            except Exception as e:
+                err_var.set(str(e))
+
+        make_button(box, "Post", post, pady=4).pack(anchor="e", padx=12, pady=(0, 8))
+
+    def _load_posts(self):
+        """Fetch and render posts. Called on init and after posting."""
+        for w in self.scroll_frame.winfo_children():
+            w.destroy()
+
+        if self.board:
+            boards_to_show = [self.board]
+        else:
+            # Home: aggregate all subscribed boards
+            # ── BACKEND TO FIX ──────────────────────────────────────
+            boards_to_show = client.get_subscribed_boards(self.app.current_user)
+            
+
+        all_msgs = []
+        for b in boards_to_show:
+            # ── BACKEND TO FIX ──────────────────────────────────────
+            # client.get_messages() returns list of message dicts for a board
+            msgs = client.get_messages(b["id"])
+            
+            for m in msgs:
+                all_msgs.append((m, b))
+
+        if not all_msgs:
+            make_label(self.scroll_frame,
+                       "No posts yet. Be the first to post!",
+                       font=FONT_BODY, fg=TEXT_SEC, bg=BG_DARK).pack(pady=40)
+            return
+
+        for msg, board in all_msgs:
+            PostCard(
+                self.scroll_frame,
+                app=self.app,
+                message=msg,
+                board=board,
+                on_click=lambda m=msg, b=board: self.on_post_click(m, b),
+                on_refresh=self._load_posts,
+            ).pack(fill="x", padx=24, pady=6)
+
+    def _subscribe(self):
+        try:
+            client.subscribe_board(self.app.current_user, self.board["id"])
+            self._build()  # Refresh view to show unsubscribe button
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+    def _unsubscribe(self):
+        try:
+            client.unsubscribe_board(self.app.current_user, self.board["id"])
+            self._build()
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PostCard — Single post preview card in the feed
+# ═══════════════════════════════════════════════════════════════
+class PostCard(tk.Frame):
+    """
+    Compact post card shown in the feed.
+    Displays: board name (home), author, timestamp, content preview,
+    comment count, edit/delete actions.
+    Clicking opens PostView.
+    """
+    def __init__(self, master, app: App, message: dict, board: dict,
+                 on_click, on_refresh):
+        super().__init__(master, bg=BG_MEDIUM, cursor="hand2",
+                         highlightbackground=BORDER, highlightthickness=1)
+        self.app        = app
+        self.message    = message
+        self.board      = board
+        self.on_click   = on_click
+        self.on_refresh = on_refresh
+        self._build()
+        # Clicking anywhere on the card opens the post
+        self.bind("<Button-1>", lambda e: on_click())
+
+    def _build(self):
+        # ── Meta row ─────────────────────────────────────────────
+        meta = tk.Frame(self, bg=BG_MEDIUM)
+        meta.pack(fill="x", padx=14, pady=(10, 4))
+
+        # Board name (shown on home feed)
+        tk.Label(meta,
+                 text=f"{self.board['name']}",
+                 font=("Helvetica", 9, "bold"),
+                 fg=ACCENT, bg=BG_MEDIUM).pack(side="left")
+
+        tk.Label(meta, text="  •  ", font=FONT_SMALL,
+                 fg=TEXT_MUTED, bg=BG_MEDIUM).pack(side="left")
+        tk.Label(meta,
+                 text=f"Posted by u/{self.message['author']}  {self.message['timestamp']}",
+                 font=FONT_META, fg=TEXT_SEC, bg=BG_MEDIUM).pack(side="left")
+
+        # ── Content preview ──────────────────────────────────────
+        content = self.message["content"]
+        preview = (content[:180] + "…") if len(content) > 180 else content
+        tk.Label(self, text=preview, font=FONT_BODY, fg=TEXT_PRI,
+                 bg=BG_MEDIUM, wraplength=700, justify="left",
+                 anchor="w").pack(fill="x", padx=14, pady=(0, 8))
+
+        # ── Action row ───────────────────────────────────────────
+        actions = tk.Frame(self, bg=BG_MEDIUM)
+        actions.pack(fill="x", padx=10, pady=(0, 8))
+
+        comment_count = len(self.message.get("comments", []))
+        tk.Button(actions,
+                  text=f"💬  {comment_count} comment{'s' if comment_count != 1 else ''}",
+                  font=FONT_SMALL, bg=BG_MEDIUM, fg=TEXT_SEC,
+                  activebackground=BG_LIGHT, relief="flat", cursor="hand2",
+                  command=self.on_click, bd=0).pack(side="left", padx=4)
+
+        # Edit — only shown to the post author
+        if self.message["author"] == self.app.current_user:
+            tk.Button(actions, text="✏ Edit",
+                      font=FONT_SMALL, bg=BG_MEDIUM, fg=TEXT_SEC,
+                      activebackground=BG_LIGHT, relief="flat", cursor="hand2",
+                      command=self._edit, bd=0).pack(side="left", padx=4)
+
+        # Delete — shown to author OR moderator/admin
+        if (self.message["author"] == self.app.current_user or
+                self.app.user_role in ("moderator", "admin")):
+            tk.Button(actions, text="🗑 Delete",
+                      font=FONT_SMALL, bg=BG_MEDIUM, fg=DANGER,
+                      activebackground=BG_LIGHT, relief="flat", cursor="hand2",
+                      command=self._delete, bd=0).pack(side="left", padx=4)
+
+    def _edit(self):
+        """Inline edit dialog for the post content."""
+        win = tk.Toplevel(self, bg=BG_MEDIUM)
+        win.title("Edit Post")
+        win.geometry("500x240")
+        win.grab_set()
+
+        make_label(win, "Edit your post:", font=FONT_BOARD).pack(pady=(16, 8))
+        text_w = tk.Text(win, font=FONT_INPUT, bg=BG_LIGHT, fg=TEXT_PRI,
+                         insertbackground=TEXT_PRI, relief="flat", height=5, wrap="word")
+        text_w.insert("1.0", self.message["content"].replace(" (edited)", ""))
+        text_w.pack(fill="x", padx=20, pady=4)
+
+        err_lbl = make_label(win, "", font=FONT_SMALL, fg=DANGER)
+        err_lbl.pack()
+
+        def save():
+            new_content = text_w.get("1.0", "end").strip()
+            if not new_content:
+                err_lbl.config(text="Content cannot be empty.")
+                return
+            try:
+                # ── BACKEND TO FIX ──────────────────────────────────
+                # client.edit_message() sends EDIT_MESSAGE request to server
+                client.edit_message(self.app.current_user, self.message["id"], new_content)
+                
+                win.destroy()
+                self.on_refresh()
+            except Exception as e:
+                err_lbl.config(text=str(e))
+
+        make_button(win, "Save Changes", save).pack(pady=8)
+
+    def _delete(self):
+        if not messagebox.askyesno("Delete Post", "Are you sure you want to delete this post?"):
+            return
+        try:
+            # ── BACKEND TO FIX ──────────────────────────────────────
+            # client.delete_message() sends DELETE_MESSAGE to server
+            # Server enforces: only author or moderator/admin can delete
+            client.delete_message(self.app.current_user,
+                                  self.message["id"],
+                                  self.app.user_role)
+            
+            self.on_refresh()
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+
+class PostView(tk.Frame):
+    """
+    Full-page view of a single post.
+    Shows: full post content, edit/delete, comment list, comment composer.
+    """
+    def __init__(self, master, app: App, message: dict, board: dict, on_back):
+        super().__init__(master, bg=BG_DARK)
+        self.app     = app
+        self.message = message
+        self.board   = board
+        self.on_back = on_back
+        self._build()
+
+    def _build(self):
+        # Scrollable outer container
+        canvas = tk.Canvas(self, bg=BG_DARK, bd=0, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self.inner = tk.Frame(canvas, bg=BG_DARK)
+
+        self.inner.bind("<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.bind_all("<MouseWheel>",
+            lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        # Back button 
+        make_button(self.inner, "← Back", self.on_back,
+                    bg=BG_LIGHT, fg=TEXT_SEC, pady=4).pack(
+                    anchor="w", padx=24, pady=(16, 0))
+
+        # Post card 
+        post_frame = tk.Frame(self.inner, bg=BG_MEDIUM,
+                              highlightbackground=BORDER, highlightthickness=1)
+        post_frame.pack(fill="x", padx=24, pady=12)
+
+        # Board + author meta
+        meta = tk.Frame(post_frame, bg=BG_MEDIUM)
+        meta.pack(fill="x", padx=14, pady=(12, 6))
+        tk.Label(meta, text=self.board["name"],
+                 font=("Helvetica", 9, "bold"), fg=ACCENT,
+                 bg=BG_MEDIUM).pack(side="left")
+        tk.Label(meta, text=f"  •  Posted by u/{self.message['author']}  {self.message['timestamp']}",
+                 font=FONT_META, fg=TEXT_SEC, bg=BG_MEDIUM).pack(side="left")
+
+        # Full content
+        tk.Label(post_frame, text=self.message["content"],
+                 font=FONT_BODY, fg=TEXT_PRI, bg=BG_MEDIUM,
+                 wraplength=760, justify="left", anchor="w").pack(
+                 fill="x", padx=14, pady=(0, 12))
+
+        # Edit/delete actions
+        actions = tk.Frame(post_frame, bg=BG_MEDIUM)
+        actions.pack(fill="x", padx=10, pady=(0, 10))
+
+        if self.message["author"] == self.app.current_user:
+            make_button(actions, "✏ Edit", self._edit_post,
+                        bg=BG_LIGHT, fg=TEXT_SEC, pady=3, padx=8,
+                        font=FONT_SMALL).pack(side="left", padx=4)
+
+        if (self.message["author"] == self.app.current_user or
+                self.app.user_role in ("moderator", "admin")):
+            make_button(actions, "🗑 Delete", self._delete_post,
+                        bg=DANGER, fg=TEXT_PRI, pady=3, padx=8,
+                        font=FONT_SMALL).pack(side="left", padx=4)
+
+        # Comment composer 
+        tk.Frame(self.inner, bg=BORDER, height=1).pack(fill="x", padx=24)
+        comment_header = tk.Frame(self.inner, bg=BG_DARK)
+        comment_header.pack(fill="x", padx=24, pady=(12, 4))
+        tk.Label(comment_header,
+                 text=f"Comments ({len(self.message.get('comments', []))})",
+                 font=FONT_BOARD, fg=TEXT_PRI, bg=BG_DARK).pack(side="left")
+
+        # Comment input
+        compose = tk.Frame(self.inner, bg=BG_MEDIUM,
+                           highlightbackground=BORDER, highlightthickness=1)
+        compose.pack(fill="x", padx=24, pady=(0, 10))
+
+        self.comment_entry = tk.Text(compose, font=FONT_INPUT, bg=BG_LIGHT,
+                                     fg=TEXT_PRI, insertbackground=TEXT_PRI,
+                                     relief="flat", height=3, wrap="word")
+        self.comment_entry.pack(fill="x", padx=12, pady=(10, 4))
+
+        self.comment_err = tk.StringVar()
+        tk.Label(compose, textvariable=self.comment_err, font=FONT_SMALL,
+                 fg=DANGER, bg=BG_MEDIUM).pack(anchor="w", padx=12)
+        make_button(compose, "Comment", self._post_comment, pady=4).pack(
+                    anchor="e", padx=12, pady=(0, 8))
+
+        # Comment list
+        self.comments_frame = tk.Frame(self.inner, bg=BG_DARK)
+        self.comments_frame.pack(fill="x", padx=24)
+        self._render_comments()
+
+    def _render_comments(self):
+        """Re-render the comment list (called after new comment posted)."""
+        for w in self.comments_frame.winfo_children():
+            w.destroy()
+
+        comments = self.message.get("comments", [])
+        if not comments:
+            make_label(self.comments_frame,
+                       "No comments yet. Share your thoughts!",
+                       font=FONT_BODY, fg=TEXT_SEC, bg=BG_DARK).pack(pady=16)
+            return
+
+        for comment in comments:
+            CommentCard(self.comments_frame, app=self.app, comment=comment,
+                        message=self.message).pack(fill="x", pady=3)
+
+    def _post_comment(self):
+        content = self.comment_entry.get("1.0", "end").strip()
+        if not content:
+            self.comment_err.set("Comment cannot be empty.")
+            return
+        try:
+            # ── BACKEND TO FIX ──────────────────────────────────────
+            # client.post_comment() sends POST_COMMENT request to server
+            new_comment = client.post_comment(
+                self.app.current_user, self.message["id"], content)
+            
+            self.message["comments"].append(new_comment)
+            self.comment_entry.delete("1.0", "end")
+            self.comment_err.set("")
+            self._render_comments()
+        except Exception as e:
+            self.comment_err.set(str(e))
+
+    def _edit_post(self):
+        win = tk.Toplevel(self, bg=BG_MEDIUM)
+        win.title("Edit Post")
+        win.geometry("500x240")
+        win.grab_set()
+
+        make_label(win, "Edit your post:", font=FONT_BOARD).pack(pady=(16, 8))
+        text_w = tk.Text(win, font=FONT_INPUT, bg=BG_LIGHT, fg=TEXT_PRI,
+                         insertbackground=TEXT_PRI, relief="flat", height=5, wrap="word")
+        text_w.insert("1.0", self.message["content"].replace(" (edited)", ""))
+        text_w.pack(fill="x", padx=20, pady=4)
+
+        err_lbl = make_label(win, "", font=FONT_SMALL, fg=DANGER)
+        err_lbl.pack()
+
+        def save():
+            new_content = text_w.get("1.0", "end").strip()
+            if not new_content:
+                err_lbl.config(text="Content cannot be empty.")
+                return
+            try:
+                client.edit_message(self.app.current_user,
+                                    self.message["id"], new_content)
+                self.message["content"] = new_content + " (edited)"
+                win.destroy()
+                # Rebuild this view to reflect changes
+                for w in self.winfo_children():
+                    w.destroy()
+                self._build()
+            except Exception as e:
+                err_lbl.config(text=str(e))
+
+        make_button(win, "Save Changes", save).pack(pady=8)
+
+    def _delete_post(self):
+        if not messagebox.askyesno("Delete Post", "Delete this post and all its comments?"):
+            return
+        try:
+            client.delete_message(self.app.current_user,
+                                  self.message["id"],
+                                  self.app.user_role)
+            self.on_back()
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+
+
+class CommentCard(tk.Frame):
+    """
+    Renders one comment.
+    Shows author, timestamp, content.
+    No delete for comments yet, we can implement later if desired.
+    """
+    def __init__(self, master, app: App, comment: dict, message: dict):
+        super().__init__(master, bg=BG_MEDIUM,
+                         highlightbackground=BORDER, highlightthickness=1)
+        self.app     = app
+        self.comment = comment
+        self.message = message
+        self._build()
+
+    def _build(self):
+        meta = tk.Frame(self, bg=BG_MEDIUM)
+        meta.pack(fill="x", padx=12, pady=(8, 2))
+
+        tk.Label(meta, text=f"u/{self.comment['author']}",
+                 font=("Helvetica", 9, "bold"), fg=ACCENT,
+                 bg=BG_MEDIUM).pack(side="left")
+        tk.Label(meta, text=f"  {self.comment['timestamp']}",
+                 font=FONT_META, fg=TEXT_SEC, bg=BG_MEDIUM).pack(side="left")
+
+        tk.Label(self, text=self.comment["content"],
+                 font=FONT_BODY, fg=TEXT_PRI, bg=BG_MEDIUM,
+                 wraplength=740, justify="left", anchor="w").pack(
+                 fill="x", padx=12, pady=(2, 10))
 
 if __name__ == "__main__":
     app = App()

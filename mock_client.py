@@ -47,6 +47,12 @@ _messages = {
         {"id": 101, "board_id": 1, "author": "alice",  "content": "How do I use decorators in Python?",       "timestamp": "2026-03-03 08:12", "comments": [
             {"id": 201, "author": "bob",   "content": "Decorators wrap a function to modify its behavior!",   "timestamp": "2026-03-03 08:45"},
             {"id": 202, "author": "alice", "content": "Oh that makes sense, thanks!",                         "timestamp": "2026-03-03 09:01"},
+            {"id": 201, "author": "bob", "content": "yeah", "timestamp": "2026-03-04 09:01"},
+            {"id": 201, "author": "bob", "content": "yeah", "timestamp": "2026-03-04 09:02"},
+            {"id": 201, "author": "bob", "content": "yeah", "timestamp": "2026-03-04 09:03"},
+            {"id": 201, "author": "bob", "content": "yeah", "timestamp": "2026-03-04 09:04"},
+            {"id": 201, "author": "bob", "content": "yeah", "timestamp": "2026-03-04 09:05"},
+            {"id": 201, "author": "bob", "content": "yeah", "timestamp": "2026-03-04 09:06"},
         ]},
         {"id": 102, "board_id": 1, "author": "bob",    "content": "PSA: use type hints, your future self will thank you.", "timestamp": "2026-03-03 10:00", "comments": []},
     ],
