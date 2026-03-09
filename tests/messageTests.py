@@ -24,7 +24,7 @@ async def test_messageboard_creation(setup_db):
 async def test_add_and_get_message(setup_db):
 	mod = Moderator("mod2", "mod2@example.com", "modpass")
 	board = MessageBoard(mod.username, "Board2")
-	await board.add_message("Test Message", 1, mod.username)
+	await board.add_message("Test Message", 1, mod)
 	messages = await board.get_messages()
 	assert 1 in messages
 	assert messages[1] == "Test Message"
@@ -33,8 +33,8 @@ async def test_add_and_get_message(setup_db):
 async def test_clear_message_by_moderator(setup_db):
 	mod = Moderator("mod3", "mod3@example.com", "modpass")
 	board = MessageBoard(mod.username, "Board3")
-	await board.add_message("Clear Me", 2, mod.username)
-	await board.clear_messages(mod.username, 2)
+	await board.add_message("Clear Me", 2, mod)
+	await board.clear_messages(mod, 2)
 	messages = await board.get_messages()
 	assert 2 not in messages
 
@@ -42,11 +42,12 @@ async def test_clear_message_by_moderator(setup_db):
 async def test_clear_message_by_non_moderator(setup_db, capsys):
 	mod = Moderator("mod4", "mod4@example.com", "modpass")
 	board = MessageBoard(mod.username, "Board4")
-	await board.add_message("Should Not Clear", 3, mod.username)
+	await board.add_message("Should Not Clear", 3, mod)
 	class DummyUser:
 		def send_message(self, msg):
 			print(msg)
 		username = "notmod"
+		user_id = 999
 	await board.clear_messages(DummyUser(), 3)
 	captured = capsys.readouterr()
 	assert "You do not have permission to clear messages" in captured.out

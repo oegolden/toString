@@ -1,3 +1,4 @@
+from messageBoard import MessageBoard
 import pytest
 from user import User, Moderator
 import sqlite3
@@ -31,3 +32,11 @@ def test_moderator_inherits_user(setup_db):
 	assert isinstance(mod, User)
 	assert mod.username == "moduser"
 
+@pytest.mark.asyncio
+async def test_user_send_message(setup_db):
+	user = User("msguser", "msg@example.com", "msgpass")
+	board = MessageBoard(user.username, "BoardMsg")
+	await board.add_message("Hello World", 1, user)
+	messages = await board.get_messages()
+	assert 1 in messages
+	assert messages[1] == "Hello World"
