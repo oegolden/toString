@@ -12,16 +12,15 @@ class MessageBoard:
         self.name = name
         self.messages = {}
         with self.pool.connection() as conn:
-            cursor = conn.execute("SELECT name FROM messageBoard WHERE name = ?", (name,))
-            if cursor.fetchone() is None:
-                conn.execute("INSERT INTO messageBoard (name, private, moderator) VALUES (?, ?, ?)", (name, 0, moderator))
-                conn.commit()
-        
+            cursor = conn.execute("SELECT message_id, message FROM messageBoard join messages on messageBoard.message_id = messages.message_id WHERE name = ? and moderator = ? AND status = 1", (name, moderator))
+            for row in cursor:
+                self.messages[row['message_id']] = row['message'] 
+
     async def add_message(self, message, message_id, user):
-            self.messages[message_id] = message
-            async with self.pool.connection() as conn:
-                await conn.execute("INSERT INTO messages (message_id, user_id, message, status) VALUES (?, ?, ?, ?)", (message_id, user.user_id, message, 0))
-                await conn.commit()
+        self.messages[message_id] = message
+        async with self.pool.connection() as conn:
+            await conn.execute("INSERT INTO messages (message_id, message, user, status) VALUES (?, ?, ?,1)", (message_id, message, user))
+            await conn.commit()
 
     async def get_messages(self):
         return self.messages
@@ -38,20 +37,3 @@ class MessageBoard:
                 await conn.commit()
         else:
             user.send_message(f"You do not have permission to clear messages. Only the moderator '{self.moderator}' can clear messages.")
-
-    async def edit_message(self, user, message_id, new_message):
-        if user == self.moderator:
-            if message_id in self.messages:
-                self.messages[message_id] = new_message
-                async with self.pool.connection() as conn:
-                    await conn.execute("UPDATE messages SET message = ? WHERE message_id = ?", (new_message, message_id))
-                    await conn.commit()
-            else:
-                user.send_message(f"Message ID {message_id} does not exist.")
-        else:
-            user.send_message(f"You do not have permission to edit messages. Only the moderator '{self.moderator}' can edit messages.")
-        
-    async def subscribe_user(self, user):
-        async with self.pool.connection() as conn:
-            await conn.execute("INSERT INTO board_subscriptions (user_id, message_board_name) VALUES (?, ?)", (user.user_id, self.name))
-            await conn.commit()
