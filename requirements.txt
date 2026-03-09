@@ -1,0 +1,4 @@
+# .toString(object) — dependencies
+# Install: pip install -r requirements.txt
+
+pytest>=7.0.0
