@@ -55,3 +55,11 @@ class MessageBoard:
         async with self.pool.connection() as conn:
             await conn.execute("INSERT INTO board_subscriptions (user_id, message_board_name) VALUES (?, ?)", (user.user_id, self.name))
             await conn.commit()
+
+    async def unsubscribe_user(self, user):
+        if user.subscribed_boards and self.name in user.subscribed_boards:
+            async with self.pool.connection() as conn:
+                await conn.execute("DELETE FROM board_subscriptions WHERE user_id = ? AND message_board_name = ?", (user.user_id, self.name))
+                await conn.commit()
+        else:
+            user.send_message(f"You are not subscribed to the message board '{self.name}'.")
