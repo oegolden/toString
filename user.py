@@ -33,3 +33,6 @@ class User:
 class Moderator(User):
     def __init__(self, username, email, password):
         super().__init__(username, email, password)
+
+    def send_message(self, message):
+        print(f"Moderator '{self.username}' sends message: {message}")
