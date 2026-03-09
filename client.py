@@ -12,7 +12,7 @@ import time
 import random
 
 server_ip = '127.0.0.1'
-server_port = 1234
+server_port = 1236
 
 
 def send_request(request):
@@ -58,8 +58,6 @@ def init():
         
 def main():
     init()
-
-
 
 if __name__ == "__main__":
     main()

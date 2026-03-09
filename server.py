@@ -15,6 +15,17 @@ from messageBoard import MessageBoard
 from user import User
 
 
+_users = {} # username: User object
+_boards = {} # board name: MessageBoard object
+
+exit = False
+lock = threading.Lock()
+
+request_queue = [] 
+connection_dict = {}
+connection_counter = 0
+
+
 helpmenu = """""
 Command Manual: \n
 
@@ -152,7 +163,7 @@ def handle_request(request):
 				send_message(return_socket, "ERROR Invalid command format for LOGIN. Please use 'LOGIN <username> <password>'")
 			if username not in _users:
 				send_message(return_socket, "ERROR User does not exist")
-			if password == _users[username].password:
+			elif password == _users[username].password:
 				send_message(return_socket, "Login successful")
 			else:
 				send_message(return_socket, "ERROR Login failed")
@@ -246,20 +257,20 @@ def input_handler(sock):
 		print("The listening socket of this process is ", portnum)
 		return
 	
-	# terminate <connection id>
-	elif command[0] == "terminate":
-		connection_id = int(command[1])
+	# # terminate <connection id>
+	# elif command[0] == "terminate":
+	# 	connection_id = int(command[1])
 
-		# verify the given connection ID exists
-		global connection_dict
-		if connection_id not in connection_dict.keys():
-			print("Invalid connection ID, please try again")
-			return
+	# 	# verify the given connection ID exists
+	# 	global connection_dict
+	# 	if connection_id not in connection_dict.keys():
+	# 		print("Invalid connection ID, please try again")
+	# 		return
 		
-		conn = connection_dict[int(connection_id)]['socket']
+	# 	conn = connection_dict[int(connection_id)]['socket']
 		
-		terminate_connection(connection_id)
-		return
+	# 	terminate_connection(connection_id)
+	# 	return
 		
 	elif command[0] == "adduser":
 		username = command[1]
@@ -309,30 +320,12 @@ def input_loop(sock):
 
 
 # Server startup and main loop
-
-""" init(): initializes global variables for the server
-"""
-def init():
-	global _users, _boards
-	_users = {} # username: User object
-	_boards = {} # board name: MessageBoard object
-
-	global exit, lock
-	exit = False
-	lock = threading.Lock()
-
-	global request_queue, connection_dict, connection_counter
-	request_queue = [] 
-	connection_dict = {}
-	connection_counter = 0
+	
 
 def main():
 	# input validation
 	if int(sys.argv[1]) not in range(1023,49152):
 		raise ValueError("Invalid port number, please enter a number between 1024 and 49152")
-
-	# initialize global server variables
-	init()
 
 	# create a listening socket
 	port = int(sys.argv[1])
