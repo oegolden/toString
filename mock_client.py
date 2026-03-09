@@ -70,6 +70,28 @@ _messages = {
 _next_message_id = 200
 _next_comment_id = 300
 
+# Snapshot of initial state for test reset (captured at import)
+_initial_users = {k: dict(v) for k, v in _users.items()}
+_initial_boards = {k: dict(v) for k, v in _boards.items()}
+_initial_subscriptions = {k: set(s) for k, s in _subscriptions.items()}
+_initial_messages = {k: [dict(m) for m in msgs] for k, msgs in _messages.items()}
+
+
+def reset_test_state():
+    """
+    Reset in-memory state to initial values. For testing only.
+    Call this between tests to avoid cross-test pollution.
+    """
+    global _users, _boards, _subscriptions, _messages
+    global _next_message_id, _next_comment_id
+    _users = {k: dict(v) for k, v in _initial_users.items()}
+    _boards = {k: dict(v) for k, v in _initial_boards.items()}
+    _subscriptions = {k: set(s) for k, s in _initial_subscriptions.items()}
+    _messages = {k: [dict(m) for m in msgs] for k, msgs in _initial_messages.items()}
+    _next_message_id = 200
+    _next_comment_id = 300
+
+
 # ─────────────────────────────────────────────
 #  Auth functions
 # ─────────────────────────────────────────────
@@ -94,9 +116,11 @@ def register(username: str, password: str) -> dict:
 
     client.py should: send registration request to server, receive confirmation.
     """
+    if not username or not username.strip():
+        raise Exception("Username cannot be empty.")
     if username in _users:
         raise Exception(f"Username '{username}' is already taken.")
-    if len(password) < 4:
+    if not password or len(password) < 4:
         raise Exception("Password must be at least 4 characters.")
     _users[username] = {"password": password, "role": "user"}
     _subscriptions[username] = set()
@@ -135,6 +159,8 @@ def create_board(username: str, name: str, description: str) -> dict:
     global _boards
     if not name.startswith("r/"):
         name = "r/" + name
+    if any(b["name"] == name for b in _boards.values()):
+        raise Exception(f"Board '{name}' already exists.")
     new_id = max(_boards.keys()) + 1
     board = {"id": new_id, "name": name, "description": description,
              "member_count": 1, "creator": username}
