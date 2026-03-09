@@ -11,18 +11,9 @@ import socket
 import threading
 import sys
 
-import messageBoard
-import user
+from messageBoard import MessageBoard
+from user import User
 
-lock = threading.Lock()
-
-exit = False
-
-# request format: (client socket, string request)
-request_queue = []
-
-connection_dict = {}
-connection_counter = 0
 
 helpmenu = """""
 Command Manual: \n
@@ -81,9 +72,11 @@ def handle_connection(connection_socket, connection_id, address):
 
 		# add request to the request queue
 		with lock:
+			global request_queue
 			request_queue.append([message, connection_socket, connection_id, address])
 			
 	connection_socket.close()
+	global connection_dict
 	del connection_dict[connection_id]
 	print(f"Closing connection {connection_id} from server side with", address)
 	
@@ -152,30 +145,43 @@ def handle_request(request):
 	# run the requested command
 	match command[0]:
 		case "LOGIN":
-			username = command[1]
-			password = command[2]
+			try:
+				username = command[1]
+				password = command[2]
+			except:
+				send_message(return_socket, "ERROR Invalid command format for LOGIN. Please use 'LOGIN <username> <password>'")
+			if username not in _users:
+				send_message(return_socket, "ERROR User does not exist")
 			if password == _users[username].password:
 				send_message(return_socket, "Login successful")
 			else:
 				send_message(return_socket, "ERROR Login failed")
+
 		case "REGISTER":
-			username = command[1]
-			password = command[2]
+			try:
+				username = command[1]
+				password = command[2]
+			except:
+				send_message(return_socket, "ERROR Invalid command format for REGISTER. Please use 'REGISTER <username> <password>'")
 			if username in _users:
 				send_message(return_socket, "ERROR Username already exists")
 			else:
-				_users[username] = user.User(username, password)
+				_users[username] = User(username, password)
 				send_message(return_socket, "Registration successful")
+
 		case "LIST_BOARDS":
 			send_message(return_socket, "json board")
+
 		case "CREATE_BOARD":
-			board_name = command[1]
-			board_desc = command[2]
+			username = command[1]
+			board_name = command[2]
+			board_desc = command[3]
 			if board_name in _boards:
 				send_message(return_socket, "ERROR Board name already exists")
 			else:
-				_boards[board_name] = messageBoard.MessageBoard(board_name, board_desc)
+				_boards[board_name] = MessageBoard(username, board_name, board_desc)
 				send_message(return_socket, "Board created successfully")
+
 		case "SUBSCRIBE":
 			username = command[1]
 			board_name = command[2]
@@ -184,15 +190,16 @@ def handle_request(request):
 			elif username in _boards[board_name].subscribers:
 				send_message(return_socket, "ERROR Already subscribed to board")
 			else:
-				_users[username].subscribe(board_name)
+				_boards[board_name].subscribe(username)
 				send_message(return_socket, "Subscribed to board successfully")
+
 		case "UNSUBSCRIBE":
 			username = command[1]
 			board_name = command[2]
 			if board_name not in _boards:
 				send_message(return_socket, "ERROR Board does not exist")
 			else:
-				_boards[board_name].unsubscribe()
+				_boards[board_name].unsubscribe(username)
 				send_message(return_socket, "Unsubscribed from board successfully")
 		case "GET_MESSAGES":
 			username = command[1]
@@ -201,7 +208,7 @@ def handle_request(request):
 				send_message(return_socket, "ERROR Board does not exist")
 			else:
 				messages = _boards[board_name].get_messages(username)
-				send_message(return_socket, "json messages")
+				send_message(return_socket, messages)
 			
 
 
@@ -212,23 +219,19 @@ input:
 sock - the socket of the current device
 """
 def input_handler(sock):
-	command = input("Input command: ")
+	command = input("Input command: ").split()
 
-	if type(command) != str:
-		print("Invalid input, please enter a string")
-		return
-
-	if command == "help":
+	if command[0] == "help":
 		print(helpmenu)
 		return
 
-	elif command == "myip":
+	elif command[0] == "myip":
 		hostname = socket.gethostname()
 		hostip = socket.gethostbyname(hostname)
 		print("The IPv4 address of this process is ", hostip)
 		return(hostip)
 	
-	elif command == "list":
+	elif command[0] == "list":
 		if len(connection_dict) == 0:
 			print("No current connections")
 		else:
@@ -238,18 +241,17 @@ def input_handler(sock):
 				print("Connection ID:", conn_id, " | IP Address:", conn.getpeername()[0], " | Listening Port:", connection_dict[conn_id]['listening_port'])
 		return
 
-	elif command == "myport":
+	elif command[0] == "myport":
 		portnum = sock.getsockname()[1]
 		print("The listening socket of this process is ", portnum)
 		return
 	
 	# terminate <connection id>
-	elif command[0:9] == "terminate":
-		# split input to get <connection id> argument
-		args = command.split()
-		connection_id = int(args[1])
+	elif command[0] == "terminate":
+		connection_id = int(command[1])
 
 		# verify the given connection ID exists
+		global connection_dict
 		if connection_id not in connection_dict.keys():
 			print("Invalid connection ID, please try again")
 			return
@@ -259,7 +261,27 @@ def input_handler(sock):
 		terminate_connection(connection_id)
 		return
 		
-	elif command == "exit":
+	elif command[0] == "adduser":
+		username = command[1]
+		password = command[2]
+		if username in _users:
+			print("ERROR Username already exists")
+		else:
+			_users[username] = user.User(username, password)
+			print("User added successfully")
+		return
+	
+	elif command[0] == "createboard":
+		board_name = command[1]
+		board_desc = command[2]
+		if board_name in _boards:
+			print("ERROR Board name already exists")
+		else:
+			_boards[board_name] = messageBoard.MessageBoard(board_name, board_desc)
+			print("Board created successfully")
+		return
+
+	elif command[0] == "exit":
 		for conn_id in list(connection_dict.keys()):
 			print("looping through connection_dict keys, currently at", conn_id)
 			conn = connection_dict[int(conn_id)]['socket']
@@ -286,12 +308,31 @@ def input_loop(sock):
 		input_handler(sock)
 
 
-# Main function to start the server, inclufding input and connection handling threads 
+# Server startup and main loop
+
+""" init(): initializes global variables for the server
+"""
+def init():
+	global _users, _boards
+	_users = {} # username: User object
+	_boards = {} # board name: MessageBoard object
+
+	global exit, lock
+	exit = False
+	lock = threading.Lock()
+
+	global request_queue, connection_dict, connection_counter
+	request_queue = [] 
+	connection_dict = {}
+	connection_counter = 0
 
 def main():
 	# input validation
 	if int(sys.argv[1]) not in range(1023,49152):
 		raise ValueError("Invalid port number, please enter a number between 1024 and 49152")
+
+	# initialize global server variables
+	init()
 
 	# create a listening socket
 	port = int(sys.argv[1])
