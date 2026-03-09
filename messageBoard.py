@@ -25,6 +25,10 @@ class MessageBoard:
     async def get_messages(self):
         return self.messages
     
+    async def get_messages_by_user(self, user):
+        user_messages = {msg_id: msg for msg_id, msg in self.messages.items() if msg['user'] == user}
+        return user_messages
+
     async def clear_messages(self, user, message_id):
         if user == self.moderator:
             self.messages.pop(message_id, None)
