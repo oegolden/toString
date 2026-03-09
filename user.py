@@ -18,7 +18,6 @@ class User:
         self.email = email
         self.password = password
         self.subscribed_boards = self.get_subscribed_boards()
-
     def __str__(self):
         return f"User(username='{self.username}', email='{self.email}')"
 
@@ -27,9 +26,8 @@ class User:
     
     def get_subscribed_boards(self):
         with self.pool.connection() as conn:
-            cursor = conn.execute("SELECT b.name FROM board_subscriptions bs JOIN messageBoard b ON bs.message_board_name = b.name WHERE bs.user_id = ?", (self.user_id,))
-            boards = [row['name'] for row in cursor]
-            self.subscribed_boards = boards
+            cursor = conn.execute("SELECT message_board_id FROM board_subscriptions join messageBoards ON board_subscriptions.message_board_id = messageBoards.id WHERE user_id = ?", (self.user_id,))
+            boards = [row['message_board_id'] for row in cursor]
         return boards
     
 class Moderator(User):
