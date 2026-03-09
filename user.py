@@ -21,6 +21,9 @@ class User:
     def __str__(self):
         return f"User(username='{self.username}', email='{self.email}')"
 
+    def send_message(self, msg):
+        return msg
+    
     def get_subscribed_boards(self):
         with self.pool.connection() as conn:
             cursor = conn.execute("SELECT message_board_id FROM board_subscriptions join messageBoards ON board_subscriptions.message_board_id = messageBoards.id WHERE user_id = ?", (self.user_id,))
@@ -30,6 +33,3 @@ class User:
 class Moderator(User):
     def __init__(self, username, email, password):
         super().__init__(username, email, password)
-
-    def send_message(self, message):
-        print(f"Moderator '{self.username}' sends message: {message}")
