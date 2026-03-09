@@ -41,7 +41,7 @@ CLASSES:
 
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
-import mock_client as client   # ← SWAP TO: import client  when backend is ready
+import client   # Real backend integration
 
 # colors
 BG_DARK     = "#e4e4e4"   # Main background
@@ -104,6 +104,17 @@ class App(tk.Tk):
         # Session state — populated on successful login
         self.current_user = None   # str: username
         self.user_role     = None  # str: "user" | "moderator" | "admin"
+
+        # Initialize client connection to server
+        try:
+            client.connect("127.0.0.1", 1234)
+        except Exception as e:
+            messagebox.showerror(
+                "Connection Error",
+                f"Failed to connect to server:\n{str(e)}\n\nMake sure the server is running on port 1234."
+            )
+            self.destroy()
+            return
 
         # Show login screen first
         self._show_login()
