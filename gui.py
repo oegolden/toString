@@ -504,6 +504,9 @@ class Sidebar(tk.Frame):
             if not name:
                 err_lbl.config(text="Board name is required.")
                 return
+            if not desc:
+                err_lbl.config(text="Description is required.")
+                return
             try:
                 # ── BACKEND TO FIX ──────────────────────────────────
                 # client.create_board() sends CREATE_BOARD to server
