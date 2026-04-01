@@ -42,6 +42,7 @@ CLASSES:
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import client   # Real backend integration
+import re
 
 # colors
 BG_DARK     = "#e4e4e4"   # Main background
@@ -64,6 +65,141 @@ FONT_META   = ("Ubuntu Condensed", 9, "italic")
 FONT_BTN    = ("Ubuntu Condensed", 10, "bold")
 FONT_INPUT  = ("Ubuntu Condensed", 11)
 
+class PasswordStrengthChecker:
+    """Password strength checker with 5 rules and scoring"""
+    
+    RULES = [
+        ("At least 8 characters", lambda pwd: len(pwd) >= 8),
+        ("Contains uppercase letter", lambda pwd: any(c.isupper() for c in pwd)),
+        ("Contains lowercase letter", lambda pwd: any(c.islower() for c in pwd)),
+        ("Contains number", lambda pwd: any(c.isdigit() for c in pwd)),
+        ("Contains special character", lambda pwd: any(c in "!@#$%^&*(),.?\":{}|<>" for c in pwd))
+    ]
+    
+    def __init__(self, master, password_var, confirm_var):
+        self.master = master
+        self.password_var = password_var
+        self.confirm_var = confirm_var
+        
+        # Create container for strength checker
+        self.checker_frame = tk.Frame(master, bg=BG_MEDIUM)
+        self.checker_frame.pack(fill="x", pady=(8, 0))
+        
+        # Progress bar (canvas rectangle)
+        self.progress_canvas = tk.Canvas(
+            self.checker_frame, height=4, bg=BG_LIGHT, 
+            highlightthickness=0, relief="flat"
+        )
+        self.progress_canvas.pack(fill="x", pady=(0, 8))
+        self.progress_rect = self.progress_canvas.create_rectangle(
+            0, 0, 0, 4, fill=BG_LIGHT, width=0
+        )
+        
+        # Strength label
+        self.strength_label = tk.Label(
+            self.checker_frame, text="", font=FONT_SMALL, 
+            fg=TEXT_SEC, bg=BG_MEDIUM
+        )
+        self.strength_label.pack(anchor="w", pady=(0, 6))
+        
+        # Rules checklist
+        self.rule_labels = []
+        for rule_text, _ in self.RULES:
+            label = tk.Label(
+                self.checker_frame, text=f"✗ {rule_text}", 
+                font=FONT_SMALL, fg=DANGER, bg=BG_MEDIUM,
+                anchor="w"
+            )
+            label.pack(fill="x", pady=1)
+            self.rule_labels.append(label)
+        
+        # Bind to password variable
+        self.password_var.trace_add("write", self._on_password_change)
+        
+    def _on_password_change(self, *args):
+        """Called when password changes"""
+        password = self.password_var.get()
+        confirm = self.confirm_var.get()
+        
+        # Check rules and calculate score
+        scores = []
+        for i, (rule_text, rule_func) in enumerate(self.RULES):
+            passed = rule_func(password)
+            scores.append(passed)
+            
+            # Update rule label
+            if passed:
+                self.rule_labels[i].config(text=f"✓ {rule_text}", fg="#2ecc71")
+            else:
+                self.rule_labels[i].config(text=f"✗ {rule_text}", fg=DANGER)
+        
+        # Calculate score (0-5)
+        score = sum(scores)
+        
+        # Update progress bar and strength label
+        self._update_progress(score)
+        self._update_strength_label(score)
+        
+        # Return score and if password is valid (score >= 3 for "Fair" or better)
+        return score, score >= 3
+    
+    def _update_progress(self, score):
+        """Update progress bar color and width based on score"""
+        # Calculate width percentage (0-5 -> 0-100%)
+        width_percent = score / 5.0
+        canvas_width = self.progress_canvas.winfo_width()
+        
+        if canvas_width > 1:
+            rect_width = int(canvas_width * width_percent)
+            self.progress_canvas.coords(self.progress_rect, 0, 0, rect_width, 4)
+        
+        # Set color based on score
+        if score <= 1:
+            color = DANGER  # Red
+        elif score <= 3:
+            color = "#f39c12"  # Yellow/Orange
+        else:
+            color = SUCCESS  # Green
+        
+        self.progress_canvas.itemconfig(self.progress_rect, fill=color)
+        
+        # Schedule update when canvas size is known
+        if canvas_width <= 1:
+            self.master.after(100, lambda: self._update_progress(score))
+    
+    def _update_strength_label(self, score):
+        """Update strength label based on score"""
+        if score <= 1:
+            text = "Weak"
+            color = DANGER
+        elif score <= 2:
+            text = "Fair"
+            color = "#f39c12"
+        elif score <= 3:
+            text = "Good"
+            color = "#f1c40f"
+        else:
+            text = "Strong"
+            color = SUCCESS
+        
+        self.strength_label.config(text=f"Password Strength: {text}", fg=color)
+    
+    def update_submit_button(self, submit_button):
+        """Enable/disable submit button based on password strength"""
+        password = self.password_var.get()
+        confirm = self.confirm_var.get()
+        
+        # Only validate if password field is not empty
+        if password:
+            score, is_strong_enough = self._on_password_change()
+            # Disable if password doesn't meet minimum requirement
+            if is_strong_enough and password == confirm:
+                submit_button.config(state="normal")
+            else:
+                submit_button.config(state="disabled")
+        else:
+            # No password entered, enable button (no validation needed)
+            submit_button.config(state="normal")
 
 def make_button(parent, text, command, bg=ACCENT, fg=TEXT_PRI,
                 padx=14, pady=5, font=FONT_BTN, **kwargs):
@@ -145,9 +281,6 @@ class App(tk.Tk):
         self._show_login()
 
 
-# ═══════════════════════════════════════════════════════════════
-#  LoginFrame — Login and registration screen
-# ═══════════════════════════════════════════════════════════════
 class LoginFrame(tk.Frame):
     """
     Shown on app startup. Handles login and new account registration.
@@ -156,12 +289,13 @@ class LoginFrame(tk.Frame):
     def __init__(self, master: App):
         super().__init__(master, bg=BG_DARK)
         self.app = master
+        self.password_checker = None  # Will be initialized in register form
         self._build()
-
+    
     def _build(self):
         # Centered card
         card = tk.Frame(self, bg=BG_MEDIUM, bd=1, relief="flat")
-        card.place(relx=0.5, rely=0.5, anchor="center", width=420, height=480)
+        card.place(relx=0.5, rely=0.5, anchor="center", width=420, height=550)  # Increased height for password checker
 
         # Logo / title
         tk.Label(card, text=".toString()", font=("Georgia", 28, "bold"),
@@ -198,28 +332,31 @@ class LoginFrame(tk.Frame):
         tk.Label(card, textvariable=self.err_var, font=FONT_SMALL,
                  fg=DANGER, bg=BG_MEDIUM, wraplength=340).pack(pady=4)
 
-    def _entry(self, parent, placeholder, show=None):
+    def _entry(self, parent, placeholder, show=None, textvariable=None):
         """Create a styled entry field with placeholder text."""
         e = tk.Entry(parent, font=FONT_INPUT, bg=BG_LIGHT, fg=TEXT_PRI,
                      insertbackground=TEXT_PRI, relief="flat",
                      highlightbackground=BORDER, highlightthickness=1,
-                     show=show)
+                     show=show, textvariable=textvariable)
         e.pack(fill="x", pady=4, ipady=8, padx=0)
         # Placeholder
         e.insert(0, placeholder)
         e.config(fg=TEXT_MUTED)
+        
         def on_focus_in(ev):
             if e.get() == placeholder:
                 e.delete(0, "end")
                 e.config(fg=TEXT_PRI)
+        
         def on_focus_out(ev):
             if not e.get():
                 e.insert(0, placeholder)
                 e.config(fg=TEXT_MUTED)
+        
         e.bind("<FocusIn>", on_focus_in)
         e.bind("<FocusOut>", on_focus_out)
         return e
-
+    
     def _build_login_form(self):
         for w in self.form_frame.winfo_children():
             w.destroy()
@@ -235,29 +372,47 @@ class LoginFrame(tk.Frame):
     def _build_register_form(self):
         for w in self.form_frame.winfo_children():
             w.destroy()
-        self.user_entry   = self._entry(self.form_frame, "Choose a username")
-        self.pass_entry   = self._entry(self.form_frame, "Password", show="•")
-        self.pass2_entry  = self._entry(self.form_frame, "Confirm password", show="•")
-        self.pass2_entry.bind("<Return>", lambda e: self._do_register())
-        make_button(self.form_frame, "CREATE ACCOUNT", self._do_register).pack(
-            fill="x", pady=(12, 0), ipady=4)
-
-    def _switch_tab(self, tab: str):
-        self.tab_var.set(tab)
-        self.err_var.set("")
-        if tab == "login":
-            self.login_tab_btn.config(fg=ACCENT)
-            self.reg_tab_btn.config(fg=TEXT_SEC)
-            self._build_login_form()
-        else:
-            self.login_tab_btn.config(fg=TEXT_SEC)
-            self.reg_tab_btn.config(fg=ACCENT)
-            self._build_register_form()
-
-    def _get_entry(self, entry, placeholder):
-        """Return entry text, or empty string if still showing placeholder."""
-        val = entry.get()
-        return "" if val == placeholder else val
+        
+        # Create StringVars to track password fields
+        self.password_var = tk.StringVar()
+        self.confirm_var = tk.StringVar()
+        
+        self.user_entry = self._entry(self.form_frame, "Choose a username")
+        
+        # Password entry with variable binding
+        self.pass_entry = self._entry(self.form_frame, "Password", show="•")
+        self.pass_entry.config(textvariable=self.password_var)
+        
+        self.pass2_entry = self._entry(self.form_frame, "Confirm password", show="•")
+        self.pass2_entry.config(textvariable=self.confirm_var)
+        
+        # Create password strength checker (pass self.form_frame as parent)
+        if self.password_checker:
+            self.password_checker.checker_frame.destroy()
+        
+        self.password_checker = PasswordStrengthChecker(
+            self.form_frame, self.password_var, self.confirm_var
+        )
+        
+        # Create submit button (initially enabled, will be disabled by checker)
+        self.register_button = make_button(
+            self.form_frame, "CREATE ACCOUNT", self._do_register
+        )
+        self.register_button.pack(fill="x", pady=(12, 0), ipady=4)
+        
+        # Bind confirm password to validate button state
+        self.confirm_var.trace_add("write", lambda *args: self._update_register_button())
+        
+        # Bind password changes to update button state
+        self.password_var.trace_add("write", lambda *args: self._update_register_button())
+        
+        # Initially set button state based on password
+        self._update_register_button()
+    
+    def _update_register_button(self):
+        """Update register button state based on password strength and confirmation"""
+        if self.password_checker and self.register_button:
+            self.password_checker.update_submit_button(self.register_button)
 
     def _do_login(self):
         username = self._get_entry(self.user_entry, "Username")
@@ -274,17 +429,26 @@ class LoginFrame(tk.Frame):
             self.app.on_login_success(result["username"], result["role"])
         except Exception as e:
             self.err_var.set(str(e))
-
+    
     def _do_register(self):
         username = self._get_entry(self.user_entry, "Choose a username")
         password = self._get_entry(self.pass_entry, "Password")
-        confirm  = self._get_entry(self.pass2_entry, "Confirm password")
+        confirm = self._get_entry(self.pass2_entry, "Confirm password")
+        
         if not username or not password:
             self.err_var.set("All fields are required.")
             return
+        
         if password != confirm:
             self.err_var.set("Passwords do not match.")
             return
+        
+        # Check password strength
+        score, is_strong_enough = self.password_checker._on_password_change()
+        if not is_strong_enough:
+            self.err_var.set("Password must be at least Fair strength (score 3/5).")
+            return
+        
         try:
             # ── BACKEND TO FIX ──────────────────────────────────────────────
             # client.register() sends new credentials to server, returns user dict
@@ -293,10 +457,19 @@ class LoginFrame(tk.Frame):
             self.app.on_login_success(result["username"], result["role"])
         except Exception as e:
             self.err_var.set(str(e))
+    
+    def _switch_tab(self, tab: str):
+        self.tab_var.set(tab)
+        self.err_var.set("")
+        if tab == "login":
+            self.login_tab_btn.config(fg=ACCENT)
+            self.reg_tab_btn.config(fg=TEXT_SEC)
+            self._build_login_form()
+        else:
+            self.login_tab_btn.config(fg=TEXT_SEC)
+            self.reg_tab_btn.config(fg=ACCENT)
+            self._build_register_form()
 
-# ═══════════════════════════════════════════════════════════════
-#  MainFrame — Post-login shell: sidebar + feed area
-# ═══════════════════════════════════════════════════════════════
 class MainFrame(tk.Frame):
     """
     The main app layout after login.
@@ -348,10 +521,6 @@ class MainFrame(tk.Frame):
         """
         self.feed_frame.show_feed(board)
 
-
-# ═══════════════════════════════════════════════════════════════
-#  Sidebar — Board list and navigation
-# ═══════════════════════════════════════════════════════════════
 class Sidebar(tk.Frame):
     """
     Left navigation panel.
