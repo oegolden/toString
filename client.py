@@ -11,7 +11,8 @@ Usage: python3 client.py <server IP> <server port>
 import socket
 import json
 import time
-
+import hashlib
+import os
 # server configuration
 server_ip = '127.0.0.1'
 server_port = 1234
@@ -21,6 +22,11 @@ server_socket = None
 MAX_BUFFER_SIZE = 8192
 
 # SERVER PROCESSING ---------------------------------
+
+def hash_password(password: str) -> str:
+    """Hash a password using SHA-256."""
+    salt = os.urandom(16)  # Generate a random salt
+    return hashlib.sha256(password.encode('utf-8'), salt, 100000).hexdigest()
 
 def _send_request(command: str) -> str:
     """
@@ -82,7 +88,7 @@ def login(username: str, password: str) -> dict:
     Returns user info dict with username and role on success.
     Raises Exception on failure.
     """
-    command = f"LOGIN {username} {password}"
+    command = f"LOGIN {username} {hash_password(password)}"
     response = _send_request(command)
     
     # Parse JSON response
@@ -96,7 +102,7 @@ def register(username: str, password: str) -> dict:
     Returns new user info dict with username and role on success.
     Raises Exception if username is taken or validation fails.
     """
-    command = f"REGISTER {username} {password}"
+    command = f"REGISTER {username} {hash_password(password)}"
     response = _send_request(command)
     
     # Parse JSON response
