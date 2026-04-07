@@ -5,14 +5,31 @@ A secure text-based group messaging board platform for CS 138 System Security.
 ## Quick Start
 
 ```bash
-# Run GUI (uses mock backend)
+# Start server in one terminal
+python3 server.py 1234
+
+# Run GUI (in another terminal)
 python3 gui.py
 
-# Run tests
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python -m pytest tests/ -v
 ```
+
+This launches the GUI, which automatically connects to the server on localhost:1234.
+
+The GUI will load the login screen. You can log in with test credentials:
+    Username: alice    Password: pass123
+    Username: bob      Password: pass456
+    Username: admin    Password: admin
+
+
+SERVER CONSOLE COMMANDS
+-----------------------
+While the server is running, you can type these commands in the server terminal:
+
+    help      - Show available commands
+    myip      - Display server IP address
+    myport    - Display listening port
+    list      - Show active client connections
+    exit      - Shutdown server
 
 ## Project Structure
 
