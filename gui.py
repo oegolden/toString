@@ -43,6 +43,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import client   # Real backend integration
 import re
+from zxcvbn import zxcvbn
 
 # colors
 BG_DARK     = "#e4e4e4"   # Main background
@@ -66,139 +67,173 @@ FONT_BTN    = ("Ubuntu Condensed", 10, "bold")
 FONT_INPUT  = ("Ubuntu Condensed", 11)
 
 class PasswordStrengthChecker:
-    """Password strength checker with 5 rules and scoring"""
-    
+    """
+    NIST 800-63B compliant password strength checker.
+    Uses zxcvbn for realistic strength estimation and prioritizes length.
+    """
+
+    # Common blocklist (can be expanded or loaded from a file)
+    # These are examples; in production, use a more comprehensive list.
+    COMMON_PASSWORDS = {
+        "password", "password1", "123456", "12345678", "qwerty", "abc123",
+        "monkey", "letmein", "dragon", "baseball", "iloveyou", "trustno1",
+        "sunshine", "master", "hello", "football", "welcome", "admin",
+        "user", "login", "password123", "admin123", "passw0rd", "password!"
+    }
+
+    # NIST criteria messages (positive, encouraging)
     RULES = [
-        ("At least 8 characters", lambda pwd: len(pwd) >= 8),
-        ("Contains uppercase letter", lambda pwd: any(c.isupper() for c in pwd)),
-        ("Contains lowercase letter", lambda pwd: any(c.islower() for c in pwd)),
-        ("Contains number", lambda pwd: any(c.isdigit() for c in pwd)),
-        ("Contains special character", lambda pwd: any(c in "!@#$%^&*(),.?\":{}|<>" for c in pwd))
+        ("At least 8 characters long", lambda pwd, info: len(pwd) >= 8),
+        ("Not a commonly used password", lambda pwd, info: pwd.lower() not in PasswordStrengthChecker.COMMON_PASSWORDS),
+        ("Not easily guessed (zxcvbn score ≥ 3)", lambda pwd, info: info.get('score', 0) >= 3),
+        ("Length is your friend — consider a passphrase", lambda pwd, info: len(pwd) >= 12),  # Bonus for length
     ]
-    
+
     def __init__(self, master, password_var, confirm_var):
         self.master = master
         self.password_var = password_var
         self.confirm_var = confirm_var
-        
-        # Create container for strength checker
+
+        # --- UI Elements ---
         self.checker_frame = tk.Frame(master, bg=BG_MEDIUM)
         self.checker_frame.pack(fill="x", pady=(8, 0))
-        
-        # Progress bar (canvas rectangle)
+
+        # Progress bar (thin canvas rectangle)
         self.progress_canvas = tk.Canvas(
-            self.checker_frame, height=4, bg=BG_LIGHT, 
+            self.checker_frame, height=4, bg=BG_LIGHT,
             highlightthickness=0, relief="flat"
         )
         self.progress_canvas.pack(fill="x", pady=(0, 8))
         self.progress_rect = self.progress_canvas.create_rectangle(
             0, 0, 0, 4, fill=BG_LIGHT, width=0
         )
-        
+
         # Strength label
         self.strength_label = tk.Label(
-            self.checker_frame, text="", font=FONT_SMALL, 
+            self.checker_frame, text="", font=FONT_SMALL,
             fg=TEXT_SEC, bg=BG_MEDIUM
         )
         self.strength_label.pack(anchor="w", pady=(0, 6))
-        
-        # Rules checklist
+
+        # Rule checklist (dynamic based on NIST)
         self.rule_labels = []
         for rule_text, _ in self.RULES:
             label = tk.Label(
-                self.checker_frame, text=f"✗ {rule_text}", 
+                self.checker_frame, text=f"✗ {rule_text}",
                 font=FONT_SMALL, fg=DANGER, bg=BG_MEDIUM,
-                anchor="w"
+                anchor="w", wraplength=300, justify="left"
             )
-            label.pack(fill="x", pady=1)
+            label.pack(fill="x", pady=2)
             self.rule_labels.append(label)
-        
+
         # Bind to password variable
         self.password_var.trace_add("write", self._on_password_change)
-        
+
+    def _evaluate(self, password):
+        """Evaluate password against NIST criteria using zxcvbn."""
+        # Get zxcvbn feedback
+        result = zxcvbn(password) if password else {"score": 0, "feedback": {}}
+        info = {
+            "score": result["score"],
+            "feedback": result.get("feedback", {}),
+            "guesses": result.get("guesses", 0)
+        }
+
+        passed_rules = []
+        for rule_text, rule_func in self.RULES:
+            passed = rule_func(password, info)
+            passed_rules.append(passed)
+        score = sum(passed_rules)  # Score 0-4 based on NIST rules
+
+        return score, passed_rules, info
+
     def _on_password_change(self, *args):
-        """Called when password changes"""
+        """Called when password changes. Updates UI and returns strength."""
         password = self.password_var.get()
         confirm = self.confirm_var.get()
-        
-        # Check rules and calculate score
-        scores = []
-        for i, (rule_text, rule_func) in enumerate(self.RULES):
-            passed = rule_func(password)
-            scores.append(passed)
-            
-            # Update rule label
-            if passed:
-                self.rule_labels[i].config(text=f"✓ {rule_text}", fg="#2ecc71")
+
+        # Evaluate password
+        score, passed_rules, info = self._evaluate(password)
+
+        # Update rule checklist UI
+        for i, (rule_text, _) in enumerate(self.RULES):
+            if passed_rules[i]:
+                self.rule_labels[i].config(text=f"✓ {rule_text}", fg=SUCCESS)
             else:
                 self.rule_labels[i].config(text=f"✗ {rule_text}", fg=DANGER)
-        
-        # Calculate score (0-5)
-        score = sum(scores)
-        
+
         # Update progress bar and strength label
-        self._update_progress(score)
-        self._update_strength_label(score)
-        
-        # Return score and if password is valid (score >= 3 for "Fair" or better)
-        return score, score >= 3
-    
-    def _update_progress(self, score):
-        """Update progress bar color and width based on score"""
-        # Calculate width percentage (0-5 -> 0-100%)
-        width_percent = score / 5.0
+        self._update_progress(score, len(passed_rules))
+        self._update_strength_label(score, info)
+
+        # Return: is_strong_enough (score >= 2 means meets minimum NIST length + not common)
+        # Score >= 2 corresponds to: length >= 8 AND not common password.
+        # You can adjust the threshold (e.g., require score >= 3 for stronger).
+        is_strong_enough = score >= 2
+        return score, is_strong_enough
+
+    def _update_progress(self, score, max_score):
+        """Update progress bar color and width based on NIST score (0-4)."""
+        if max_score == 0:
+            return
+        width_percent = score / max_score
         canvas_width = self.progress_canvas.winfo_width()
-        
+
         if canvas_width > 1:
             rect_width = int(canvas_width * width_percent)
             self.progress_canvas.coords(self.progress_rect, 0, 0, rect_width, 4)
-        
-        # Set color based on score
+
+        # Color mapping: Red → Yellow → Green
         if score <= 1:
-            color = DANGER  # Red
-        elif score <= 3:
-            color = "#f39c12"  # Yellow/Orange
-        else:
-            color = SUCCESS  # Green
-        
-        self.progress_canvas.itemconfig(self.progress_rect, fill=color)
-        
-        # Schedule update when canvas size is known
-        if canvas_width <= 1:
-            self.master.after(100, lambda: self._update_progress(score))
-    
-    def _update_strength_label(self, score):
-        """Update strength label based on score"""
-        if score <= 1:
-            text = "Weak"
             color = DANGER
         elif score <= 2:
+            color = "#f39c12"  # Orange
+        else:
+            color = SUCCESS
+
+        self.progress_canvas.itemconfig(self.progress_rect, fill=color)
+
+        if canvas_width <= 1:
+            self.master.after(100, lambda: self._update_progress(score, max_score))
+
+    def _update_strength_label(self, score, info):
+        """Set strength text and color based on NIST score."""
+        if score <= 0:
+            text = "Very Weak"
+            color = DANGER
+        elif score == 1:
+            text = "Weak"
+            color = DANGER
+        elif score == 2:
             text = "Fair"
             color = "#f39c12"
-        elif score <= 3:
+        elif score == 3:
             text = "Good"
             color = "#f1c40f"
         else:
             text = "Strong"
             color = SUCCESS
-        
-        self.strength_label.config(text=f"Password Strength: {text}", fg=color)
-    
+
+        # Add zxcvbn warning if available and score is low
+        warning = info.get('feedback', {}).get('warning', '')
+        display_text = f"Strength: {text}"
+        if warning and score < 3:
+            display_text += f" – {warning}"
+
+        self.strength_label.config(text=display_text, fg=color)
+
     def update_submit_button(self, submit_button):
-        """Enable/disable submit button based on password strength"""
+        """Enable/disable submit button based on NIST password strength and confirmation match."""
         password = self.password_var.get()
         confirm = self.confirm_var.get()
-        
-        # Only validate if password field is not empty
+
         if password:
-            score, is_strong_enough = self._on_password_change()
-            # Disable if password doesn't meet minimum requirement
+            _, is_strong_enough = self._on_password_change()
             if is_strong_enough and password == confirm:
                 submit_button.config(state="normal")
             else:
                 submit_button.config(state="disabled")
         else:
-            # No password entered, enable button (no validation needed)
             submit_button.config(state="normal")
 
 def make_button(parent, text, command, bg=ACCENT, fg=TEXT_PRI,
@@ -357,6 +392,11 @@ class LoginFrame(tk.Frame):
         e.bind("<FocusOut>", on_focus_out)
         return e
     
+    def _get_entry(self, entry, placeholder):
+        """Return entry text, or empty string if still showing placeholder."""
+        val = entry.get()
+        return "" if val == placeholder else val
+    
     def _build_login_form(self):
         for w in self.form_frame.winfo_children():
             w.destroy()
@@ -380,21 +420,20 @@ class LoginFrame(tk.Frame):
         self.user_entry = self._entry(self.form_frame, "Choose a username")
         
         # Password entry with variable binding
-        self.pass_entry = self._entry(self.form_frame, "Password", show="•")
-        self.pass_entry.config(textvariable=self.password_var)
+        self.pass_entry = self._entry(self.form_frame, "Password", show="•", textvariable=self.password_var)
         
-        self.pass2_entry = self._entry(self.form_frame, "Confirm password", show="•")
-        self.pass2_entry.config(textvariable=self.confirm_var)
+        self.pass2_entry = self._entry(self.form_frame, "Confirm password", show="•", textvariable=self.confirm_var)
+        self.pass2_entry.bind("<Return>", lambda e: self._do_register())
         
-        # Create password strength checker (pass self.form_frame as parent)
-        if self.password_checker:
+        # Create password strength checker
+        if hasattr(self, 'password_checker') and self.password_checker:
             self.password_checker.checker_frame.destroy()
         
         self.password_checker = PasswordStrengthChecker(
             self.form_frame, self.password_var, self.confirm_var
         )
         
-        # Create submit button (initially enabled, will be disabled by checker)
+        # Create submit button
         self.register_button = make_button(
             self.form_frame, "CREATE ACCOUNT", self._do_register
         )
@@ -408,11 +447,43 @@ class LoginFrame(tk.Frame):
         
         # Initially set button state based on password
         self._update_register_button()
-    
+
     def _update_register_button(self):
         """Update register button state based on password strength and confirmation"""
-        if self.password_checker and self.register_button:
+        if hasattr(self, 'password_checker') and self.password_checker and hasattr(self, 'register_button'):
             self.password_checker.update_submit_button(self.register_button)
+
+    def _do_register(self):
+        username = self._get_entry(self.user_entry, "Choose a username")
+        password = self._get_entry(self.pass_entry, "Password")
+        confirm = self._get_entry(self.pass2_entry, "Confirm password")
+
+        if not username or not password:
+            self.err_var.set("All fields are required.")
+            return
+
+        if password != confirm:
+            self.err_var.set("Passwords do not match.")
+            return
+
+        # Check password strength (NIST-based)
+        if self.password_checker:
+            score, is_strong_enough = self.password_checker._on_password_change()
+            # Require at least "Fair" (score >= 2) — meets NIST baseline
+            if not is_strong_enough:
+                self.err_var.set(
+                    "Password does not meet NIST guidelines.\n"
+                    "Must be at least 8 characters and not a common password.\n"
+                    "Consider a longer passphrase."
+                )
+                return
+
+        # Proceed with registration...
+        try:
+            result = client.register(username, password)
+            self.app.on_login_success(result["username"], result["role"])
+        except Exception as e:
+            self.err_var.set(str(e))
 
     def _do_login(self):
         username = self._get_entry(self.user_entry, "Username")
@@ -425,34 +496,6 @@ class LoginFrame(tk.Frame):
             # client.login() sends credentials over socket and returns:
             # {"username": str, "role": "user"|"moderator"|"admin"}
             result = client.login(username, password)
-            # ─────────────────────────────────────────────────────────────
-            self.app.on_login_success(result["username"], result["role"])
-        except Exception as e:
-            self.err_var.set(str(e))
-    
-    def _do_register(self):
-        username = self._get_entry(self.user_entry, "Choose a username")
-        password = self._get_entry(self.pass_entry, "Password")
-        confirm = self._get_entry(self.pass2_entry, "Confirm password")
-        
-        if not username or not password:
-            self.err_var.set("All fields are required.")
-            return
-        
-        if password != confirm:
-            self.err_var.set("Passwords do not match.")
-            return
-        
-        # Check password strength
-        score, is_strong_enough = self.password_checker._on_password_change()
-        if not is_strong_enough:
-            self.err_var.set("Password must be at least Fair strength (score 3/5).")
-            return
-        
-        try:
-            # ── BACKEND TO FIX ──────────────────────────────────────────────
-            # client.register() sends new credentials to server, returns user dict
-            result = client.register(username, password)
             # ─────────────────────────────────────────────────────────────
             self.app.on_login_success(result["username"], result["role"])
         except Exception as e:
