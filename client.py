@@ -194,12 +194,12 @@ def edit_message(username: str, message_id: int, new_content: str) -> bool:
     return data.get("success", True)
 
 
-def delete_message(username: str, message_id: int, role: str) -> bool:
+def delete_message(username: str, message_id: int, board_id: int) -> bool:
     """
-    Delete a message. Authors can delete their own; moderators can delete any.
+    Delete a message. Authors can delete their own; moderators can delete any on their boards.
     Returns True on success.
     """
-    command = f"DELETE_MESSAGE {username} {message_id} {role}"
+    command = f"DELETE_MESSAGE {username} {message_id} {board_id}"
     response = _send_request(command)
     # Response should be JSON with a success indicator
     data = _parse_json_response(response)
@@ -212,6 +212,78 @@ def post_comment(username: str, message_id: int, content: str) -> dict:
     Returns the new comment dict.
     """
     command = f"POST_COMMENT {username} {message_id} {content}"
+    response = _send_request(command)
+    return _parse_json_response(response)
+
+
+# MODERATOR FUNCTIONS ---------------------------------
+
+def upgrade_user(admin_username: str, target_username: str) -> dict:
+    """
+    Upgrade a user to system-wide moderator. Admin only.
+    Returns success response dict.
+    """
+    command = f"UPGRADE_USER {admin_username} {target_username}"
+    response = _send_request(command)
+    return _parse_json_response(response)
+
+
+def downgrade_user(admin_username: str, target_username: str) -> dict:
+    """
+    Downgrade a moderator back to regular user. Admin only.
+    Returns success response dict.
+    """
+    command = f"DOWNGRADE_USER {admin_username} {target_username}"
+    response = _send_request(command)
+    return _parse_json_response(response)
+
+
+def assign_board_moderator(admin_username: str, target_username: str, board_id: int) -> dict:
+    """
+    Assign a user as moderator for a specific board. Admin only.
+    Returns success response dict with board details.
+    """
+    command = f"ASSIGN_BOARD_MODERATOR {admin_username} {target_username} {board_id}"
+    response = _send_request(command)
+    return _parse_json_response(response)
+
+
+def remove_board_moderator(admin_username: str, target_username: str, board_id: int) -> dict:
+    """
+    Remove a user as moderator from a specific board. Admin only.
+    Returns success response dict.
+    """
+    command = f"REMOVE_BOARD_MODERATOR {admin_username} {target_username} {board_id}"
+    response = _send_request(command)
+    return _parse_json_response(response)
+
+
+def list_board_moderators(board_id: int) -> dict:
+    """
+    List all moderators for a specific board.
+    Returns dict with board info and list of moderators.
+    """
+    command = f"LIST_BOARD_MODERATORS {board_id}"
+    response = _send_request(command)
+    return _parse_json_response(response)
+
+
+def get_moderated_boards(username: str) -> dict:
+    """
+    Get list of boards that a user moderates.
+    Returns dict with username, role, and list of moderated boards.
+    """
+    command = f"GET_MODERATED_BOARDS {username}"
+    response = _send_request(command)
+    return _parse_json_response(response)
+
+
+def get_audit_logs(admin_username: str, limit: int = 100) -> dict:
+    """
+    Retrieve audit logs. Admin only.
+    Returns dict with audit logs and total log count.
+    """
+    command = f"GET_AUDIT_LOGS {admin_username} {limit}"
     response = _send_request(command)
     return _parse_json_response(response)
 

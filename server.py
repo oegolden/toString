@@ -18,8 +18,8 @@ import time
 
 _users = {
     "alice":     {"password": "pass123", "role": "user"},
-    "bob":       {"password": "pass456", "role": "moderator"},
-    "admin":     {"password": "admin",   "role": "admin"},
+    "bob":       {"password": "pass456-bird", "role": "moderator"},
+    "admin":     {"password": "admin-car-whale",   "role": "admin"},
 }
 
 _boards = {
@@ -34,6 +34,17 @@ _subscriptions = {
     "bob":   {1, 2, 4},
     "admin": {1, 2, 3, 4},
 }
+
+# Track board-specific moderators: board_id -> set of usernames
+_board_moderators = {
+    1: {"bob"},
+    2: {"bob", "admin"},
+    3: {"admin"},
+    4: {"bob"},
+}
+
+# Audit log for tracking role changes and moderator actions
+_audit_logs = []
 
 _messages = {
     1: [
@@ -80,6 +91,40 @@ def send_error(connection_socket, error_message):
 	"""Send an ERROR response to the specified socket."""
 	response = f"ERROR {error_message}"
 	send_message(connection_socket, response)
+
+
+def log_audit(action, performed_by, target_user=None, board_id=None, details=None):
+	"""Log audit event for security tracking."""
+	log_entry = {
+		"action": action,
+		"performed_by": performed_by,
+		"target_user": target_user,
+		"board_id": board_id,
+		"details": details,
+		"timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+	}
+	_audit_logs.append(log_entry)
+	print(f"[AUDIT] {action} by {performed_by}: {details}")
+
+
+def is_user_moderator_of_board(username, board_id):
+	"""Check if user is a moderator of a specific board."""
+	board_mods = _board_moderators.get(board_id, set())
+	return username in board_mods
+
+
+def is_system_moderator(username):
+	"""Check if user has system-wide moderator role."""
+	return _users.get(username, {}).get("role") in ("moderator", "admin")
+
+
+def get_user_board_moderation_list(username):
+	"""Get list of boards that a user moderates."""
+	moderated_boards = []
+	for board_id, mods in _board_moderators.items():
+		if username in mods:
+			moderated_boards.append(board_id)
+	return moderated_boards
 
 
 
@@ -405,26 +450,36 @@ def handle_request(request):
 
 		elif cmd == "DELETE_MESSAGE":
 			if len(command_parts) < 4:
-				send_error(return_socket, "Invalid command format. Use: DELETE_MESSAGE <username> <message_id> <role>")
+				send_error(return_socket, "Invalid command format. Use: DELETE_MESSAGE <username> <message_id> <board_id>")
 				return
 			
 			username = command_parts[1]
 			try:
 				message_id = int(command_parts[2])
+				board_id = int(command_parts[3])
 			except ValueError:
-				send_error(return_socket, "Message ID must be an integer")
+				send_error(return_socket, "Message ID and Board ID must be integers")
 				return
-			
-			role = command_parts[3]
 			
 			# Find and delete the message
 			for board_msgs in _messages.values():
 				for msg in board_msgs:
 					if msg["id"] == message_id:
-						if msg["author"] != username and role not in ("moderator", "admin"):
-							send_error(return_socket, "You can only delete your own messages")
+						# Check authorization: message author, board moderator, or admin
+						is_author = msg["author"] == username
+						is_board_moderator = is_user_moderator_of_board(username, board_id)
+						is_admin = _users.get(username, {}).get("role") == "admin"
+						
+						if not (is_author or is_board_moderator or is_admin):
+							send_error(return_socket, "You can only delete your own messages, or manage messages on boards you moderate")
 							return
+						
 						board_msgs.remove(msg)
+						action_detail = f"Deleted message {message_id} by {msg['author']}"
+						if not is_author:
+							action_detail += f" (deleted by {username})"
+						log_audit("DELETE_MESSAGE", username, msg["author"], board_id, action_detail)
+						
 						send_json(return_socket, {"success": True})
 						return
 			
@@ -460,6 +515,227 @@ def handle_request(request):
 						return
 			
 			send_error(return_socket, "Message not found")
+
+		# Moderator management commands
+		elif cmd == "UPGRADE_USER":
+			"""Upgrade a user to system-wide moderator status. Admin only."""
+			if len(command_parts) < 3:
+				send_error(return_socket, "Invalid command format. Use: UPGRADE_USER <admin_username> <target_username>")
+				return
+			
+			admin_username = command_parts[1]
+			target_username = command_parts[2]
+			
+			# Verify admin status
+			if _users.get(admin_username, {}).get("role") != "admin":
+				send_error(return_socket, "Only admins can upgrade users to moderator")
+				return
+			
+			if target_username not in _users:
+				send_error(return_socket, f"User '{target_username}' does not exist")
+				return
+			
+			if _users[target_username]["role"] == "moderator":
+				send_error(return_socket, f"User '{target_username}' is already a moderator")
+				return
+			
+			# Upgrade user to moderator
+			_users[target_username]["role"] = "moderator"
+			log_audit("UPGRADE_USER", admin_username, target_username, None, f"Upgraded {target_username} to moderator")
+			
+			send_json(return_socket, {
+				"success": True,
+				"message": f"User '{target_username}' promoted to system moderator",
+				"username": target_username,
+				"role": "moderator"
+			})
+
+		elif cmd == "DOWNGRADE_USER":
+			"""Downgrade a moderator back to regular user. Admin only."""
+			if len(command_parts) < 3:
+				send_error(return_socket, "Invalid command format. Use: DOWNGRADE_USER <admin_username> <target_username>")
+				return
+			
+			admin_username = command_parts[1]
+			target_username = command_parts[2]
+			
+			# Verify admin status
+			if _users.get(admin_username, {}).get("role") != "admin":
+				send_error(return_socket, "Only admins can downgrade moderators")
+				return
+			
+			if target_username not in _users:
+				send_error(return_socket, f"User '{target_username}' does not exist")
+				return
+			
+			current_role = _users[target_username].get("role", "user")
+			if current_role not in ("moderator", "admin"):
+				send_error(return_socket, f"User '{target_username}' is not a moderator")
+				return
+			
+			# Downgrade user
+			_users[target_username]["role"] = "user"
+			
+			# Remove from all board moderation
+			for board_id in list(_board_moderators.keys()):
+				_board_moderators[board_id].discard(target_username)
+			
+			log_audit("DOWNGRADE_USER", admin_username, target_username, None, f"Downgraded {target_username} to regular user")
+			
+			send_json(return_socket, {
+				"success": True,
+				"message": f"User '{target_username}' downgraded to regular user",
+				"username": target_username,
+				"role": "user"
+			})
+
+		elif cmd == "ASSIGN_BOARD_MODERATOR":
+			"""Assign a moderator to manage a specific board. Admin only."""
+			if len(command_parts) < 4:
+				send_error(return_socket, "Invalid command format. Use: ASSIGN_BOARD_MODERATOR <admin_username> <target_username> <board_id>")
+				return
+			
+			admin_username = command_parts[1]
+			target_username = command_parts[2]
+			try:
+				board_id = int(command_parts[3])
+			except ValueError:
+				send_error(return_socket, "Board ID must be an integer")
+				return
+			
+			# Verify admin status
+			if _users.get(admin_username, {}).get("role") != "admin":
+				send_error(return_socket, "Only admins can assign board moderators")
+				return
+			
+			if target_username not in _users:
+				send_error(return_socket, f"User '{target_username}' does not exist")
+				return
+			
+			if board_id not in _boards:
+				send_error(return_socket, f"Board with ID {board_id} does not exist")
+				return
+			
+			# Assign moderator to board
+			_board_moderators.setdefault(board_id, set()).add(target_username)
+			log_audit("ASSIGN_BOARD_MODERATOR", admin_username, target_username, board_id, f"Assigned {target_username} as moderator for board {board_id}")
+			
+			send_json(return_socket, {
+				"success": True,
+				"message": f"User '{target_username}' assigned as moderator for board '{_boards[board_id]['name']}'",
+				"username": target_username,
+				"board_id": board_id,
+				"board_name": _boards[board_id]["name"]
+			})
+
+		elif cmd == "REMOVE_BOARD_MODERATOR":
+			"""Remove a moderator from a specific board. Admin only."""
+			if len(command_parts) < 4:
+				send_error(return_socket, "Invalid command format. Use: REMOVE_BOARD_MODERATOR <admin_username> <target_username> <board_id>")
+				return
+			
+			admin_username = command_parts[1]
+			target_username = command_parts[2]
+			try:
+				board_id = int(command_parts[3])
+			except ValueError:
+				send_error(return_socket, "Board ID must be an integer")
+				return
+			
+			# Verify admin status
+			if _users.get(admin_username, {}).get("role") != "admin":
+				send_error(return_socket, "Only admins can remove board moderators")
+				return
+			
+			if target_username not in _users:
+				send_error(return_socket, f"User '{target_username}' does not exist")
+				return
+			
+			board_mods = _board_moderators.get(board_id, set())
+			if target_username not in board_mods:
+				send_error(return_socket, f"User '{target_username}' is not a moderator for this board")
+				return
+			
+			# Remove moderator from board
+			_board_moderators[board_id].discard(target_username)
+			log_audit("REMOVE_BOARD_MODERATOR", admin_username, target_username, board_id, f"Removed {target_username} as moderator from board {board_id}")
+			
+			send_json(return_socket, {
+				"success": True,
+				"message": f"User '{target_username}' removed as moderator from board '{_boards[board_id]['name']}'",
+				"username": target_username,
+				"board_id": board_id
+			})
+
+		elif cmd == "LIST_BOARD_MODERATORS":
+			"""List all moderators for a specific board."""
+			if len(command_parts) < 2:
+				send_error(return_socket, "Invalid command format. Use: LIST_BOARD_MODERATORS <board_id>")
+				return
+			
+			try:
+				board_id = int(command_parts[1])
+			except ValueError:
+				send_error(return_socket, "Board ID must be an integer")
+				return
+			
+			if board_id not in _boards:
+				send_error(return_socket, f"Board with ID {board_id} does not exist")
+				return
+			
+			mods = list(_board_moderators.get(board_id, set()))
+			send_json(return_socket, {
+				"board_id": board_id,
+				"board_name": _boards[board_id]["name"],
+				"moderators": mods
+			})
+
+		elif cmd == "GET_MODERATED_BOARDS":
+			"""Get list of boards that a user moderates."""
+			if len(command_parts) < 2:
+				send_error(return_socket, "Invalid command format. Use: GET_MODERATED_BOARDS <username>")
+				return
+			
+			username = command_parts[1]
+			if username not in _users:
+				send_error(return_socket, f"User '{username}' does not exist")
+				return
+			
+			moderated_board_ids = get_user_board_moderation_list(username)
+			boards = [_boards[bid] for bid in moderated_board_ids]
+			
+			send_json(return_socket, {
+				"username": username,
+				"role": _users[username].get("role", "user"),
+				"moderated_boards": boards
+			})
+
+		elif cmd == "GET_AUDIT_LOGS":
+			"""Retrieve audit logs. Admin only."""
+			if len(command_parts) < 2:
+				send_error(return_socket, "Invalid command format. Use: GET_AUDIT_LOGS <admin_username> [limit]")
+				return
+			
+			admin_username = command_parts[1]
+			
+			# Verify admin status
+			if _users.get(admin_username, {}).get("role") != "admin":
+				send_error(return_socket, "Only admins can view audit logs")
+				return
+			
+			limit = 100
+			if len(command_parts) > 2:
+				try:
+					limit = int(command_parts[2])
+				except ValueError:
+					pass
+			
+			# Return last 'limit' audit logs
+			logs = _audit_logs[-limit:] if limit > 0 else _audit_logs
+			send_json(return_socket, {
+				"total_logs": len(_audit_logs),
+				"logs": logs
+			})
 
 		else:
 			send_error(return_socket, f"Unknown command: {cmd}")

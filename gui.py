@@ -278,7 +278,7 @@ class App(tk.Tk):
 
         # Initialize client connection to server
         try:
-            client.connect("127.0.0.1", 1234)
+            client.connect("127.0.0.1", 1235)
         except Exception as e:
             messagebox.showerror(
                 "Connection Error",
@@ -406,7 +406,7 @@ class LoginFrame(tk.Frame):
         make_button(self.form_frame, "LOG IN", self._do_login).pack(
             fill="x", pady=(12, 0), ipady=4)
         # Quick test-login hint
-        tk.Label(self.form_frame, text="Test: alice / pass123  |  bob / pass456",
+        tk.Label(self.form_frame, text="Test: alice / pass123",
                  font=FONT_SMALL, fg=TEXT_MUTED, bg=BG_MEDIUM).pack(pady=(8, 0))
 
     def _build_register_form(self):
@@ -533,6 +533,11 @@ class MainFrame(tk.Frame):
         tk.Label(nav, text=".toString()", font=("Georgia", 16, "bold"),
                  fg=ACCENT, bg=BG_MEDIUM).pack(side="left", padx=16, pady=10)
 
+        # Admin/Moderator menu button (if admin)
+        if self.app.user_role == "admin":
+            make_button(nav, "🔧 Admin Panel", self._open_admin_panel,
+                        bg=DANGER, fg=TEXT_PRI, padx=10, pady=4).pack(side="left", padx=8, pady=8)
+
         # User info + logout (right side of nav)
         tk.Label(nav, text=f"👤 {self.app.current_user}  [{self.app.user_role}]",
                  font=FONT_SMALL, fg=TEXT_SEC, bg=BG_MEDIUM).pack(side="right", padx=8)
@@ -563,6 +568,10 @@ class MainFrame(tk.Frame):
         board=None means "Home" (all subscribed boards).
         """
         self.feed_frame.show_feed(board)
+
+    def _open_admin_panel(self):
+        """Open the admin control panel for managing moderators and viewing audit logs."""
+        AdminPanel(self.app).show()
 
 class Sidebar(tk.Frame):
     """
@@ -1267,6 +1276,303 @@ class CommentCard(tk.Frame):
                  font=FONT_BODY, fg=TEXT_PRI, bg=BG_MEDIUM,
                  wraplength=740, justify="left", anchor="w").pack(
                  fill="x", padx=12, pady=(2, 10))
+
+
+class AdminPanel(tk.Toplevel):
+    """
+    Admin control panel for managing moderators and viewing audit logs.
+    Provides interface for upgrading/downgrading users and assigning board moderators.
+    """
+    def __init__(self, app: App):
+        super().__init__(app)
+        self.app = app
+        self.title("Admin Panel - .toString()")
+        self.geometry("800x600")
+        self.configure(bg=BG_DARK)
+        self._build()
+
+    def _build(self):
+        """Build the admin panel interface."""
+        # Title
+        tk.Label(self, text="🔧 Admin Panel", font=FONT_TITLE,
+                 fg=ACCENT, bg=BG_DARK).pack(pady=16, padx=16)
+
+        # Tabs for different admin functions
+        tab_frame = tk.Frame(self, bg=BG_MEDIUM)
+        tab_frame.pack(fill="both", expand=True, padx=16, pady=0)
+
+        notebook = ttk.Notebook(tab_frame)
+        notebook.pack(fill="both", expand=True)
+
+        # Tab 1: Promote/Demote Users
+        promote_frame = tk.Frame(notebook, bg=BG_MEDIUM)
+        notebook.add(promote_frame, text="Promote to Moderator")
+        self._build_promote_tab(promote_frame)
+
+        # Tab 2: Manage Board Moderators
+        board_mod_frame = tk.Frame(notebook, bg=BG_MEDIUM)
+        notebook.add(board_mod_frame, text="Board Moderators")
+        self._build_board_moderators_tab(board_mod_frame)
+
+        # Tab 3: Audit Logs
+        logs_frame = tk.Frame(notebook, bg=BG_MEDIUM)
+        notebook.add(logs_frame, text="Audit Logs")
+        self._build_audit_logs_tab(logs_frame)
+
+    def _build_promote_tab(self, parent):
+        """Build tab for promoting/demoting users to/from moderator."""
+        # Title
+        tk.Label(parent, text="System Moderator Management",
+                 font=FONT_BOARD, fg=ACCENT, bg=BG_MEDIUM).pack(pady=12, padx=12, anchor="w")
+
+        # Input frame
+        input_frame = tk.Frame(parent, bg=BG_MEDIUM)
+        input_frame.pack(fill="x", padx=12, pady=8)
+
+        tk.Label(input_frame, text="Username:", font=FONT_BODY,
+                 fg=TEXT_PRI, bg=BG_MEDIUM).pack(side="left", padx=4)
+        self.promote_username_var = tk.StringVar()
+        entry = tk.Entry(input_frame, textvariable=self.promote_username_var,
+                         font=FONT_BODY, bg=BG_LIGHT, fg=TEXT_PRI, relief="flat", width=20)
+        entry.pack(side="left", padx=4)
+
+        make_button(input_frame, "Promote to Moderator",
+                    self._do_promote_user, bg=SUCCESS).pack(side="left", padx=4)
+        make_button(input_frame, "Downgrade to User",
+                    self._do_downgrade_user, bg=DANGER).pack(side="left", padx=4)
+
+        # Status label
+        self.promote_status_var = tk.StringVar()
+        tk.Label(parent, textvariable=self.promote_status_var, font=FONT_SMALL,
+                 fg=TEXT_SEC, bg=BG_MEDIUM).pack(pady=8)
+
+    def _build_board_moderators_tab(self, parent):
+        """Build tab for assigning board moderators."""
+        tk.Label(parent, text="Assign Board Moderators",
+                 font=FONT_BOARD, fg=ACCENT, bg=BG_MEDIUM).pack(pady=12, padx=12, anchor="w")
+
+        # Input frame
+        input_frame = tk.Frame(parent, bg=BG_MEDIUM)
+        input_frame.pack(fill="x", padx=12, pady=8)
+
+        tk.Label(input_frame, text="Username:", font=FONT_BODY,
+                 fg=TEXT_PRI, bg=BG_MEDIUM).pack(side="left", padx=4)
+        self.board_mod_username_var = tk.StringVar()
+        entry1 = tk.Entry(input_frame, textvariable=self.board_mod_username_var,
+                          font=FONT_BODY, bg=BG_LIGHT, fg=TEXT_PRI, relief="flat", width=15)
+        entry1.pack(side="left", padx=4)
+
+        tk.Label(input_frame, text="Board ID:", font=FONT_BODY,
+                 fg=TEXT_PRI, bg=BG_MEDIUM).pack(side="left", padx=4)
+        self.board_mod_board_id_var = tk.StringVar()
+        entry2 = tk.Entry(input_frame, textvariable=self.board_mod_board_id_var,
+                          font=FONT_BODY, bg=BG_LIGHT, fg=TEXT_PRI, relief="flat", width=10)
+        entry2.pack(side="left", padx=4)
+
+        make_button(input_frame, "Assign", self._do_assign_board_mod, bg=SUCCESS).pack(side="left", padx=4)
+        make_button(input_frame, "Remove", self._do_remove_board_mod, bg=DANGER).pack(side="left", padx=4)
+
+        # Status label
+        self.board_mod_status_var = tk.StringVar()
+        tk.Label(parent, textvariable=self.board_mod_status_var, font=FONT_SMALL,
+                 fg=TEXT_SEC, bg=BG_MEDIUM).pack(pady=8)
+
+        # Board moderators list
+        tk.Label(parent, text="Moderators by Board:", font=FONT_BODY,
+                 fg=TEXT_PRI, bg=BG_MEDIUM).pack(pady=(12, 4), padx=12, anchor="w")
+
+        # Scrollable text area for board moderators
+        scroll_frame = tk.Frame(parent, bg=BG_MEDIUM)
+        scroll_frame.pack(fill="both", expand=True, padx=12, pady=8)
+
+        scrollbar = tk.Scrollbar(scroll_frame)
+        scrollbar.pack(side="right", fill="y")
+
+        self.board_mods_text = scrolledtext.ScrolledText(
+            scroll_frame, font=FONT_SMALL, bg=BG_LIGHT, fg=TEXT_PRI,
+            yscrollcommand=scrollbar.set, relief="flat", height=10, width=80
+        )
+        self.board_mods_text.pack(fill="both", expand=True)
+        scrollbar.config(command=self.board_mods_text.yview)
+
+        # Refresh button
+        make_button(parent, "Refresh Board Moderators List",
+                    self._refresh_board_mods, bg=ACCENT).pack(pady=8)
+
+        # Initial load
+        self._refresh_board_mods()
+
+    def _build_audit_logs_tab(self, parent):
+        """Build tab for viewing audit logs."""
+        tk.Label(parent, text="Audit Logs",
+                 font=FONT_BOARD, fg=ACCENT, bg=BG_MEDIUM).pack(pady=12, padx=12, anchor="w")
+
+        # Controls
+        controls_frame = tk.Frame(parent, bg=BG_MEDIUM)
+        controls_frame.pack(fill="x", padx=12, pady=8)
+
+        tk.Label(controls_frame, text="Limit:", font=FONT_BODY,
+                 fg=TEXT_PRI, bg=BG_MEDIUM).pack(side="left", padx=4)
+        self.audit_limit_var = tk.StringVar(value="50")
+        entry = tk.Entry(controls_frame, textvariable=self.audit_limit_var,
+                         font=FONT_BODY, bg=BG_LIGHT, fg=TEXT_PRI, relief="flat", width=5)
+        entry.pack(side="left", padx=4)
+
+        make_button(controls_frame, "Load Audit Logs",
+                    self._load_audit_logs, bg=ACCENT).pack(side="left", padx=4)
+
+        # Scrollable text area for audit logs
+        scroll_frame = tk.Frame(parent, bg=BG_MEDIUM)
+        scroll_frame.pack(fill="both", expand=True, padx=12, pady=8)
+
+        scrollbar = tk.Scrollbar(scroll_frame)
+        scrollbar.pack(side="right", fill="y")
+
+        self.audit_logs_text = scrolledtext.ScrolledText(
+            scroll_frame, font=FONT_SMALL, bg=BG_LIGHT, fg=TEXT_PRI,
+            yscrollcommand=scrollbar.set, relief="flat", height=15, width=80
+        )
+        self.audit_logs_text.pack(fill="both", expand=True)
+        scrollbar.config(command=self.audit_logs_text.yview)
+
+        # Initial load
+        self._load_audit_logs()
+
+    def _do_promote_user(self):
+        """Promote a user to system-wide moderator."""
+        username = self.promote_username_var.get()
+        if not username:
+            self.promote_status_var.set("Error: Please enter a username")
+            return
+        
+        try:
+            response = client.upgrade_user(self.app.current_user, username)
+            self.promote_status_var.set(f"✓ {response.get('message', 'Success')}")
+            self.promote_username_var.set("")
+        except Exception as e:
+            self.promote_status_var.set(f"Error: {str(e)}")
+
+    def _do_downgrade_user(self):
+        """Downgrade a moderator back to regular user."""
+        username = self.promote_username_var.get()
+        if not username:
+            self.promote_status_var.set("Error: Please enter a username")
+            return
+        
+        try:
+            response = client.downgrade_user(self.app.current_user, username)
+            self.promote_status_var.set(f"✓ {response.get('message', 'Success')}")
+            self.promote_username_var.set("")
+        except Exception as e:
+            self.promote_status_var.set(f"Error: {str(e)}")
+
+    def _do_assign_board_mod(self):
+        """Assign user as moderator to a board."""
+        username = self.board_mod_username_var.get()
+        board_id_str = self.board_mod_board_id_var.get()
+        
+        if not username or not board_id_str:
+            self.board_mod_status_var.set("Error: Please enter both username and board ID")
+            return
+        
+        try:
+            board_id = int(board_id_str)
+            response = client.assign_board_moderator(self.app.current_user, username, board_id)
+            self.board_mod_status_var.set(f"✓ {response.get('message', 'Success')}")
+            self.board_mod_username_var.set("")
+            self.board_mod_board_id_var.set("")
+            self._refresh_board_mods()
+        except ValueError:
+            self.board_mod_status_var.set("Error: Board ID must be a number")
+        except Exception as e:
+            self.board_mod_status_var.set(f"Error: {str(e)}")
+
+    def _do_remove_board_mod(self):
+        """Remove user as moderator from a board."""
+        username = self.board_mod_username_var.get()
+        board_id_str = self.board_mod_board_id_var.get()
+        
+        if not username or not board_id_str:
+            self.board_mod_status_var.set("Error: Please enter both username and board ID")
+            return
+        
+        try:
+            board_id = int(board_id_str)
+            response = client.remove_board_moderator(self.app.current_user, username, board_id)
+            self.board_mod_status_var.set(f"✓ {response.get('message', 'Success')}")
+            self.board_mod_username_var.set("")
+            self.board_mod_board_id_var.set("")
+            self._refresh_board_mods()
+        except ValueError:
+            self.board_mod_status_var.set("Error: Board ID must be a number")
+        except Exception as e:
+            self.board_mod_status_var.set(f"Error: {str(e)}")
+
+    def _refresh_board_mods(self):
+        """Refresh the board moderators list."""
+        self.board_mods_text.config(state="normal")
+        self.board_mods_text.delete("1.0", "end")
+        
+        try:
+            boards = client.get_all_boards()
+            for board in boards:
+                board_id = board.get("id")
+                response = client.list_board_moderators(board_id)
+                mods = response.get("moderators", [])
+                
+                mod_str = ", ".join(mods) if mods else "(no moderators)"
+                self.board_mods_text.insert("end", f"📌 {board['name']} (ID: {board_id}): {mod_str}\n")
+        except Exception as e:
+            self.board_mods_text.insert("end", f"Error loading board moderators: {str(e)}\n")
+        
+        self.board_mods_text.config(state="disabled")
+
+    def _load_audit_logs(self):
+        """Load and display audit logs."""
+        self.audit_logs_text.config(state="normal")
+        self.audit_logs_text.delete("1.0", "end")
+        
+        try:
+            limit = int(self.audit_limit_var.get())
+        except ValueError:
+            self.audit_logs_text.insert("end", "Error: Limit must be a number\n")
+            self.audit_logs_text.config(state="disabled")
+            return
+        
+        try:
+            response = client.get_audit_logs(self.app.current_user, limit)
+            logs = response.get("logs", [])
+            total = response.get("total_logs", 0)
+            
+            self.audit_logs_text.insert("end", f"Total logs: {total} | Showing last {min(limit, len(logs))}\n")
+            self.audit_logs_text.insert("end", "─" * 78 + "\n\n")
+            
+            if logs:
+                for log in reversed(logs):  # Show newest first
+                    timestamp = log.get("timestamp", "N/A")
+                    action = log.get("action", "UNKNOWN")
+                    performed_by = log.get("performed_by", "system")
+                    target = log.get("target_user", "N/A")
+                    board = log.get("board_id", "N/A")
+                    details = log.get("details", "")
+                    
+                    self.audit_logs_text.insert("end", f"[{timestamp}] {action}\n")
+                    self.audit_logs_text.insert("end", f"  By: {performed_by} | Target: {target} | Board: {board}\n")
+                    if details:
+                        self.audit_logs_text.insert("end", f"  Details: {details}\n")
+                    self.audit_logs_text.insert("end", "\n")
+            else:
+                self.audit_logs_text.insert("end", "No audit logs found.\n")
+        except Exception as e:
+            self.audit_logs_text.insert("end", f"Error loading audit logs: {str(e)}\n")
+        
+        self.audit_logs_text.config(state="disabled")
+
+    def show(self):
+        """Display the admin panel."""
+        self.deiconify()
+        self.lift()
+        self.focus()
 
 if __name__ == "__main__":
     app = App()
