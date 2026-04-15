@@ -11,6 +11,7 @@ def setup_database(db_path="toString.db"):
 		user_id INTEGER PRIMARY KEY AUTOINCREMENT,
 		username TEXT UNIQUE NOT NULL,
 		password TEXT NOT NULL,
+		email TEXT UNIQUE NOT NULL,
 		role TEXT DEFAULT 'user',
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
@@ -62,6 +63,8 @@ def setup_database(db_path="toString.db"):
 		timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 	''')
+
+	
 
 	conn.commit()
 	conn.close()

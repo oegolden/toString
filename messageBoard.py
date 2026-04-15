@@ -3,7 +3,7 @@ import sqlite3
 from utils.sqlService import get_pool
 
 class MessageBoard:
-    def __init__(self, moderator, name):
+    def __init__(self, moderator, name, ):
         try:
             self.pool = get_pool()
         except RuntimeError:

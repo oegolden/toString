@@ -2,3 +2,6 @@
 # Install: pip install -r requirements.txt
 
 pytest>=7.0.0
+aiosqlite
+aiosqlitepool
+python-dotenv
