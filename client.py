@@ -1,3 +1,23 @@
+# PASSWORD RECOVERY FUNCTIONS ---------------------------------
+
+def send_recovery_email(username: str, email: str) -> dict:
+    """
+    Request a password recovery email to be sent to the user.
+    Returns a dict with success and message.
+    """
+    command = f"SEND_RECOVERY_EMAIL {username} {email}"
+    response = _send_request(command)
+    return _parse_json_response(response)
+
+def reset_password(username: str, email: str, recovery_code: str, new_password: str) -> dict:
+    """
+    Reset the user's password using the recovery code.
+    Returns a dict with success and message.
+    """
+    # new_password may contain spaces, so quote if needed
+    command = f"RESET_PASSWORD {username} {email} {recovery_code} {new_password}"
+    response = _send_request(command)
+    return _parse_json_response(response)
 """
 client.py - Client side of the toString messaging application.
 
@@ -20,7 +40,6 @@ server_port = 1234
 server_socket = None
 MAX_BUFFER_SIZE = 8192
 
-# SERVER PROCESSING ---------------------------------
 
 def _send_request(command: str) -> str:
     """

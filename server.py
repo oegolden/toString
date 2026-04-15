@@ -13,13 +13,37 @@ import sys
 import json
 import time
 
+# Password hashing imports
+import hashlib
+import os
+import asyncio
 
+from utils.sqlService import init_pool
 # mock data
 
+
+def hash_password(password: str, salt: bytes = None) -> str:
+	"""Hash a password using SHA-256 and a salt. Returns salt$hash."""
+	if salt is None:
+		salt = os.urandom(16)
+	hash_bytes = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100000)
+	return salt.hex() + '$' + hash_bytes.hex()
+
+def verify_password(stored: str, provided: str) -> bool:
+	"""Verify a stored password hash against a provided password."""
+	try:
+		salt_hex, hash_hex = stored.split('$')
+		salt = bytes.fromhex(salt_hex)
+		provided_hash = hashlib.pbkdf2_hmac('sha256', provided.encode('utf-8'), salt, 100000).hex()
+		return provided_hash == hash_hex
+	except Exception:
+		return False
+
+# Pre-hash the mock users' passwords
 _users = {
-    "alice":     {"password": "pass123", "role": "user"},
-    "bob":       {"password": "pass456-bird", "role": "moderator"},
-    "admin":     {"password": "admin-car-whale",   "role": "admin"},
+	"alice":     {"password": hash_password("pass123"), "role": "user"},
+	"bob":       {"password": hash_password("pass456"), "role": "moderator"},
+	"admin":     {"password": hash_password("admin"),   "role": "admin"},
 }
 
 _boards = {
@@ -75,7 +99,6 @@ def send_message(connection_socket, message):
 		print(f"Sent: {message}")
 	except Exception as e:
 		print(f"Error sending message: {e}")
-
 
 def send_json(connection_socket, data):
 	"""Send a JSON response to the specified socket."""
@@ -233,23 +256,20 @@ def handle_request(request):
 	cmd = command_parts[0]
 
 	try:
+
 		# auth commands
 		if cmd == "LOGIN":
 			if len(command_parts) < 3:
 				send_error(return_socket, "Invalid command format. Use: LOGIN <username> <password>")
 				return
-			
 			username = command_parts[1]
 			password = command_parts[2]
-			
 			if username not in _users:
 				send_error(return_socket, "User does not exist")
 				return
-			
-			if _users[username]["password"] != password:
+			if not verify_password(_users[username]["password"], password):
 				send_error(return_socket, "Invalid password")
 				return
-			
 			send_json(return_socket, {
 				"username": username,
 				"role": _users[username]["role"]
@@ -259,21 +279,17 @@ def handle_request(request):
 			if len(command_parts) < 3:
 				send_error(return_socket, "Invalid command format. Use: REGISTER <username> <password>")
 				return
-			
 			username = command_parts[1]
 			password = command_parts[2]
-			
 			if username in _users:
 				send_error(return_socket, f"Username '{username}' is already taken")
 				return
-			
 			if len(password) < 4:
 				send_error(return_socket, "Password must be at least 4 characters")
 				return
-			
-			_users[username] = {"password": password, "role": "user"}
+			hashed = hash_password(password)
+			_users[username] = {"password": hashed, "role": "user"}
 			_subscriptions[username] = set()
-			
 			send_json(return_socket, {
 				"username": username,
 				"role": "user"
@@ -736,9 +752,55 @@ def handle_request(request):
 				"total_logs": len(_audit_logs),
 				"logs": logs
 			})
+		
+		elif cmd == "SEND_RECOVERY_EMAIL":
+			# Usage: SEND_RECOVERY_EMAIL <username> <email>
+			if len(command_parts) < 3:
+				send_error(return_socket, "Invalid command format. Use: SEND_RECOVERY_EMAIL <username> <email>")
+				return
+			username = command_parts[1]
+			email = command_parts[2]
+			try:
+				from user import User
+				user = User(username, email)
+				recovery_code = user.send_recovery_email()
+				# Store the recovery code in a temporary dict for later verification (in-memory for now)
+				_recovery_codes[username] = recovery_code
+				send_json(return_socket, {"success": True, "message": f"Recovery email sent to {email}"})
+			except Exception as e:
+				send_error(return_socket, f"Failed to send recovery email: {e}")
 
+		elif cmd == "RESET_PASSWORD":
+			# Usage: RESET_PASSWORD <username> <email> <recovery_code> <new_password>
+			if len(command_parts) < 4:
+				send_error(return_socket, "Invalid command format. Use: RESET_PASSWORD <username> <email> <recovery_code> <new_password>")
+				return
+			# The last part may contain spaces in the password, so split accordingly
+			username = command_parts[1]
+			email = command_parts[2]
+			rest = command_parts[3].split(maxsplit=1)
+			if len(rest) < 2:
+				send_error(return_socket, "Invalid command format. Use: RESET_PASSWORD <username> <email> <recovery_code> <new_password>")
+				return
+			recovery_code = rest[0]
+			new_password = rest[1]
+			try:
+				# Check recovery code
+				if _recovery_codes[username] != recovery_code:
+					send_error(return_socket, "Invalid recovery code.")
+					return
+				from user import User
+				user = User(username, email)
+				# Await the async reset_password method
+				asyncio.run(user.reset_password(new_password))
+				del _recovery_codes[username]
+				send_json(return_socket, {"success": True, "message": "Password reset successful."})
+			except Exception as e:
+				send_error(return_socket, f"Failed to reset password: {e}")
 		else:
 			send_error(return_socket, f"Unknown command: {cmd}")
+		
+			
 
 	except Exception as e:
 		print(f"Error handling request: {e}")
@@ -823,6 +885,10 @@ def init():
 	global exit, lock
 	exit = False
 	lock = threading.Lock()
+	global _recovery_codes
+	_recovery_codes = {}
+
+	init_pool()
 
 def main():
 	# input validation
