@@ -12,6 +12,7 @@ import threading
 import sys
 import json
 import time
+import ssl
 
 # Password hashing imports
 import hashlib
@@ -207,22 +208,26 @@ inputs:
 s - listening socket
 """
 def accept_connection(s):
-	s.listen(50) # start listening for up to 50 connections
-	while True:
-		# accept connection request
-		connection_socket, address = s.accept()
+		s.listen(50) # start listening for up to 50 connections
+		while True:
+			# accept connection request
+			try:
+				connection_socket, address = s.accept()
+			except ssl.SSLError as e:
+				print(f"SSL error on accept: {e}")
+				continue
 
-		global connection_counter
-		connection_dict[connection_counter] = {
-			"socket": connection_socket,
-			"listening_port": connection_socket.getsockname()[1],
-		}
-		connection_counter += 1
-		print("Got connection from", address)
+			global connection_counter
+			connection_dict[connection_counter] = {
+				"socket": connection_socket,
+				"listening_port": connection_socket.getsockname()[1],
+			}
+			connection_counter += 1
+			print("Got connection from", address)
 
-		# create a thread to handle the accepted client
-		thread = threading.Thread(target=handle_connection, args=(connection_socket, (connection_counter-1), address), daemon=True)
-		thread.start()  # start the thread
+			# create a thread to handle the accepted client
+			thread = threading.Thread(target=handle_connection, args=(connection_socket, (connection_counter-1), address), daemon=True)
+			thread.start()  # start the thread
 
 
 """ handle_requests(): continuously check for requests from clients and handle them
@@ -892,16 +897,22 @@ def init():
 
 def main():
 	# input validation
-	if int(sys.argv[1]) not in range(1023,49152):
+	if int(sys.argv[1]) not in range(1024,49152):
 		raise ValueError("Invalid port number, please enter a number between 1024 and 49152")
 
 	# initialize global server variables
 	init()
 
+	# SSL context setup
+	context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+	# Use your own certificate and key paths here
+	context.load_cert_chain(certfile="server.crt", keyfile="server.key")
+
 	# create a listening socket
 	port = int(sys.argv[1])
 	s = socket.socket()
-	s.bind(("", port))  # input is a tuple with address and port as elements
+	s.bind(("", port))
+	s = context.wrap_socket(s, server_side=True)
 	print("Hello. Created new process with listening port", port)
 
 	# start a thread to gather user input
@@ -912,8 +923,8 @@ def main():
 	# start a thread to accept connections
 	connection_thread = threading.Thread(target=accept_connection, name="connection_thread", args=(s,), daemon=True)
 	connection_thread.start()
-	
-    # start a thread to handle requests from clients
+
+	# start a thread to handle requests from clients
 	request_thread = threading.Thread(target=handle_requests, name="request_handler_thread", args=(), daemon=True)
 	request_thread.start()
 

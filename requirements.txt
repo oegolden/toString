@@ -5,3 +5,4 @@ pytest>=7.0.0
 aiosqlite
 aiosqlitepool
 python-dotenv
+cryptography
