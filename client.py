@@ -31,6 +31,7 @@ Usage: python3 client.py <server IP> <server port>
 import socket
 import json
 import time
+import ssl
 
 # server configuration
 server_ip = '127.0.0.1'
@@ -77,7 +78,12 @@ def connect(ip: str = server_ip, port: int = server_port):
     """
     global server_socket
     try:
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        raw_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        context = ssl.create_default_context()
+        # If using self-signed certs, you may want to disable cert verification for testing:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        server_socket = context.wrap_socket(raw_sock, server_hostname=ip)
         server_socket.connect((ip, port))
     except socket.error as e:
         raise Exception(f"Failed to connect to server at {ip}:{port}: {e}")
