@@ -5,6 +5,9 @@ A secure text-based group messaging board platform for CS 138 System Security.
 ## Quick Start
 
 ```bash
+#generate cert and server key
+python3 generate_cert.py
+
 # Start server in one terminal
 python3 server.py 1234
 
