@@ -10,12 +10,14 @@ python3 generate_cert.py
 
 # Start server in one terminal
 python3 server.py 1234
+
+# Start the GUI in another terminal
+python3 gui.py
 ```
 
 ## 📋 Table of Contents
 
 - [Features](#features)
-- [System Architecture](#system-architecture)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Configuration](#configuration)
@@ -24,9 +26,7 @@ python3 server.py 1234
 - [Security Features](#security-features)
 - [Database Schema](#database-schema)
 - [Audit Logging](#audit-logging)
-- [Command Reference](#command-reference)
-- [Development](#development)
-- [Troubleshooting](#troubleshooting)
+
 
 ---
 
