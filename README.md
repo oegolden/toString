@@ -33,45 +33,45 @@ python3 gui.py
 ## ✨ Features
 
 ### Authentication & Authorization
-- ✅ User registration with password strength validation (NIST 800-63B compliant)
-- ✅ Secure login with audit logging (success/failures, IP, device, timestamp)
-- ✅ Role-based access control (User, Moderator, Admin)
-- ✅ Password reset functionality
-- ✅ System-wide moderators and board-specific moderators
+- User registration with password strength validation (NIST 800-63B compliant)
+- Secure login with audit logging (success/failures, IP, device, timestamp)
+- Role-based access control (User, Moderator, Admin)
+- Password reset functionality
+- System-wide moderators and board-specific moderators
 
 ### Message Board Features
-- ✅ Create and manage message boards (r/ naming convention)
-- ✅ Subscribe/unsubscribe from boards
-- ✅ Post messages and comments
-- ✅ Edit/delete messages (with authorization checks)
-- ✅ Board discovery and home feed
+- Create and manage message boards (r/ naming convention)
+- Subscribe/unsubscribe from boards
+- Post messages and comments
+- Edit/delete messages (with authorization checks)
+- Board discovery and home feed
 
 ### Moderation System
-- ✅ User role management (promote/demote users to moderators)
-- ✅ Board-specific moderator assignment
-- ✅ Message deletion by authors, board moderators, or admins
-- ✅ Audit logging for all moderator actions
-- ✅ Admin panel for moderation management
+- User role management (promote/demote users to moderators)
+- Board-specific moderator assignment
+- Message deletion by authors, board moderators, or admins
+- Audit logging for all moderator actions
+- Admin panel for moderation management
 
 ### Content Moderation
-- ✅ Automatic harmful content detection and flagging
-- ✅ Profanity checking
-- ✅ Spam pattern detection
-- ✅ Suspicious keyword detection
-- ✅ Excessive capitalization detection
+- Automatic harmful content detection and flagging
+- Profanity checking
+- Spam pattern detection
+- Suspicious keyword detection
+- Excessive capitalization detection
 
 ### Audit & Security Logging
-- ✅ **Login Logs:** Track all login attempts with IP, device, status
-- ✅ **Post Logs:** Track posts with harmful content flags and IP addresses
-- ✅ **Moderator Logs:** Track all moderator actions with IP and device info
-- ✅ **General Audit Trail:** All security-relevant actions timestamped and logged
+- **Login Logs:** Track all login attempts with IP, device, status
+- **Post Logs:** Track posts with harmful content flags and IP addresses
+- **Moderator Logs:** Track all moderator actions with IP and device info
+- **General Audit Trail:** All security-relevant actions timestamped and logged
 
 ### User Interface
-- ✅ Modern Tkinter GUI with Reddit-like layout
-- ✅ Server connection configuration (IP & port)
-- ✅ Real-time password strength validation
-- ✅ Admin panel with moderation tools
-- ✅ Audit log viewer with pagination
+- Modern Tkinter GUI with Reddit-like layout
+- Server connection configuration (IP & port)
+- Real-time password strength validation
+- Admin panel with moderation tools
+- Audit log viewer with pagination
 ---
 
 ## 📦 Requirements
@@ -298,8 +298,6 @@ All actions logged with:
 - **audit_logs:** Security event trail
 - **login_logs:** Authentication tracking
 - **post_logs:** Content tracking with harmful flags
-
-See full schema details in documentation section below.
 
 ---
 
