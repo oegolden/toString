@@ -13,6 +13,7 @@ import sys
 import json
 import time
 import ssl
+from content_moderation import get_moderator as get_content_moderator
 
 # Password hashing imports
 import hashlib
@@ -42,9 +43,9 @@ def verify_password(stored: str, provided: str) -> bool:
 
 # Pre-hash the mock users' passwords
 _users = {
-	"alice":     {"password": hash_password("pass123"), "role": "user"},
-	"bob":       {"password": hash_password("pass456"), "role": "moderator"},
-	"admin":     {"password": hash_password("admin"),   "role": "admin"},
+	"alice":     {"password": hash_password("pass123"), "role": "user", "email": "alice@example.com"},
+	"bob":       {"password": hash_password("pass456"), "role": "moderator", "email": "bob@example.com"},
+	"admin":     {"password": hash_password("admin"),   "role": "admin", "email": "admin@example.com"},
 }
 
 _boards = {
@@ -117,7 +118,7 @@ def send_error(connection_socket, error_message):
 	send_message(connection_socket, response)
 
 
-def log_audit(action, performed_by, target_user=None, board_id=None, details=None):
+def log_audit(action, performed_by, target_user=None, board_id=None, details=None, ip_address=None, device_info=None, success=True):
 	"""Log audit event for security tracking."""
 	log_entry = {
 		"action": action,
@@ -125,10 +126,58 @@ def log_audit(action, performed_by, target_user=None, board_id=None, details=Non
 		"target_user": target_user,
 		"board_id": board_id,
 		"details": details,
+		"ip_address": ip_address,
+		"device_info": device_info,
+		"success": success,
 		"timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
 	}
 	_audit_logs.append(log_entry)
-	print(f"[AUDIT] {action} by {performed_by}: {details}")
+	print(f"[AUDIT] {action} by {performed_by}: {details} | IP: {ip_address} | Device: {device_info} | Success: {success}")
+
+
+def log_login(username, ip_address, device_info, success, failure_reason=None):
+	"""Log login attempt for security tracking."""
+	log_entry = {
+		"username": username,
+		"ip_address": ip_address,
+		"device_info": device_info,
+		"success": success,
+		"failure_reason": failure_reason,
+		"timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+	}
+	if not hasattr(log_login, 'attempts'):
+		log_login.attempts = []
+	log_login.attempts.append(log_entry)
+	status = "SUCCESS" if success else f"FAILED ({failure_reason})"
+	print(f"[LOGIN] {username} | Status: {status} | IP: {ip_address} | Device: {device_info}")
+
+
+def log_post(message_id, username, board_id, ip_address, device_info, content_preview, action="POST", flagged_harmful=False, reason=None):
+	"""Log post action for content tracking."""
+	log_entry = {
+		"message_id": message_id,
+		"username": username,
+		"board_id": board_id,
+		"ip_address": ip_address,
+		"device_info": device_info,
+		"content_preview": content_preview[:100] if content_preview else "",  # First 100 chars
+		"action": action,
+		"flagged_harmful": flagged_harmful,
+		"harmful_flag_reason": reason,
+		"timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+	}
+	if not hasattr(log_post, 'posts'):
+		log_post.posts = []
+	log_post.posts.append(log_entry)
+	harmful_flag = f" [FLAGGED: {reason}]" if flagged_harmful else ""
+	print(f"[POST] {action} by {username} on board {board_id} | IP: {ip_address}{harmful_flag}")
+
+
+def extract_device_info(request_metadata=None):
+	"""Extract device information from request (simplified for CLI client)."""
+	if request_metadata:
+		return request_metadata
+	return "Python-Client"
 
 
 def is_user_moderator_of_board(username, board_id):
@@ -162,6 +211,10 @@ def handle_connection(connection_socket, connection_id, address):
 	"""
 	actions for each connection
 	"""
+	# Extract IP address from the connection
+	client_ip = address[0] if isinstance(address, tuple) else str(address)
+	print(f"[CONNECTION] New connection from {client_ip}")
+	
 	while True:
 		# receive data in bytes
 		data = connection_socket.recv(1024)
@@ -174,10 +227,10 @@ def handle_connection(connection_socket, connection_id, address):
 		if message == "close":
 			break
 
-		# add request to the request queue
+		# add request to the request queue with IP address
 		with lock:
 			global request_queue
-			request_queue.append([message, connection_socket, connection_id, address])
+			request_queue.append([message, connection_socket, connection_id, address, client_ip])
 			
 	connection_socket.close()
 	global connection_dict
@@ -253,12 +306,14 @@ def handle_request(request):
 	return_socket = request[1]
 	return_id = request[2]
 	return_address = request[3]
+	client_ip = request[4] if len(request) > 4 else "Unknown"
 
 	if not command_parts:
 		send_error(return_socket, "Empty command")
 		return
 
 	cmd = command_parts[0]
+	device_info = "Python-Client"
 
 	try:
 
@@ -270,22 +325,29 @@ def handle_request(request):
 			username = command_parts[1]
 			password = command_parts[2]
 			if username not in _users:
+				log_login(username, client_ip, device_info, False, "User does not exist")
 				send_error(return_socket, "User does not exist")
 				return
+			
 			if not verify_password(_users[username]["password"], password):
+				log_login(username, client_ip, device_info, False, "Invalid password")
 				send_error(return_socket, "Invalid password")
 				return
+			
+			log_login(username, client_ip, device_info, True)
 			send_json(return_socket, {
 				"username": username,
 				"role": _users[username]["role"]
 			})
 
 		elif cmd == "REGISTER":
-			if len(command_parts) < 3:
-				send_error(return_socket, "Invalid command format. Use: REGISTER <username> <password>")
+			if len(command_parts) < 4:
+				log_login(command_parts[1] if len(command_parts) > 1 else "UNKNOWN", client_ip, device_info, False, "Invalid registration format")
+				send_error(return_socket, "Invalid command format. Use: REGISTER <username> <password> <email>")
 				return
 			username = command_parts[1]
 			password = command_parts[2]
+			email = command_parts[3]
 			if username in _users:
 				send_error(return_socket, f"Username '{username}' is already taken")
 				return
@@ -293,7 +355,7 @@ def handle_request(request):
 				send_error(return_socket, "Password must be at least 4 characters")
 				return
 			hashed = hash_password(password)
-			_users[username] = {"password": hashed, "role": "user"}
+			_users[username] = {"password": hashed, "role": "user", "email": email}
 			_subscriptions[username] = set()
 			send_json(return_socket, {
 				"username": username,
@@ -429,16 +491,25 @@ def handle_request(request):
 				send_error(return_socket, "You must be subscribed to post on this board")
 				return
 			
+			# Check content for harmful patterns
+			moderator = get_content_moderator()
+			flagged_harmful, flag_reason = moderator.moderate(content)
+			
 			msg = {
 				"id": _next_message_id,
 				"board_id": board_id,
 				"author": username,
 				"content": content,
 				"timestamp": time.strftime("%Y-%m-%d %H:%M"),
-				"comments": []
+				"comments": [],
+				"flagged": flagged_harmful,
+				"flag_reason": flag_reason if flagged_harmful else None
 			}
 			_next_message_id += 1
 			_messages.setdefault(board_id, []).insert(0, msg)
+			
+			# Log the post action with harmful content flag
+			log_post(msg["id"], username, board_id, client_ip, device_info, content, "POST", flagged_harmful, flag_reason)
 			
 			send_json(return_socket, msg)
 
@@ -562,7 +633,7 @@ def handle_request(request):
 			
 			# Upgrade user to moderator
 			_users[target_username]["role"] = "moderator"
-			log_audit("UPGRADE_USER", admin_username, target_username, None, f"Upgraded {target_username} to moderator")
+			log_audit("UPGRADE_USER", admin_username, target_username, None, f"Upgraded {target_username} to moderator", client_ip, device_info)
 			
 			send_json(return_socket, {
 				"success": True,
@@ -601,7 +672,7 @@ def handle_request(request):
 			for board_id in list(_board_moderators.keys()):
 				_board_moderators[board_id].discard(target_username)
 			
-			log_audit("DOWNGRADE_USER", admin_username, target_username, None, f"Downgraded {target_username} to regular user")
+			log_audit("DOWNGRADE_USER", admin_username, target_username, None, f"Downgraded {target_username} to regular user", client_ip, device_info)
 			
 			send_json(return_socket, {
 				"success": True,
@@ -639,7 +710,7 @@ def handle_request(request):
 			
 			# Assign moderator to board
 			_board_moderators.setdefault(board_id, set()).add(target_username)
-			log_audit("ASSIGN_BOARD_MODERATOR", admin_username, target_username, board_id, f"Assigned {target_username} as moderator for board {board_id}")
+			log_audit("ASSIGN_BOARD_MODERATOR", admin_username, target_username, board_id, f"Assigned {target_username} as moderator for board {board_id}", client_ip, device_info)
 			
 			send_json(return_socket, {
 				"success": True,
@@ -679,7 +750,7 @@ def handle_request(request):
 			
 			# Remove moderator from board
 			_board_moderators[board_id].discard(target_username)
-			log_audit("REMOVE_BOARD_MODERATOR", admin_username, target_username, board_id, f"Removed {target_username} as moderator from board {board_id}")
+			log_audit("REMOVE_BOARD_MODERATOR", admin_username, target_username, board_id, f"Removed {target_username} as moderator from board {board_id}", client_ip, device_info)
 			
 			send_json(return_socket, {
 				"success": True,
@@ -923,6 +994,7 @@ def main():
 	# start a thread to accept connections
 	connection_thread = threading.Thread(target=accept_connection, name="connection_thread", args=(s,), daemon=True)
 	connection_thread.start()
+	print("Started thread connection_thread")
 
 	# start a thread to handle requests from clients
 	request_thread = threading.Thread(target=handle_requests, name="request_handler_thread", args=(), daemon=True)

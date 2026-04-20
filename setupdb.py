@@ -60,6 +60,54 @@ def setup_database(db_path="toString.db"):
 		target_user INTEGER REFERENCES users(user_id),
 		board_id INTEGER REFERENCES messageBoard(board_id),
 		details TEXT,
+		ip_address TEXT,
+		device_info TEXT,
+		success BOOLEAN DEFAULT 1,
+		timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+	''')
+
+	# Create login attempt logs for security tracking
+	cursor.execute('''
+	CREATE TABLE IF NOT EXISTS login_logs (
+		login_id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT,
+		user_id INTEGER REFERENCES users(user_id),
+		ip_address TEXT NOT NULL,
+		device_info TEXT,
+		success BOOLEAN NOT NULL,
+		failure_reason TEXT,
+		timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+	''')
+
+	# Create post audit logs for content tracking
+	cursor.execute('''
+	CREATE TABLE IF NOT EXISTS post_logs (
+		post_log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+		message_id INTEGER REFERENCES messages(message_id),
+		user_id INTEGER REFERENCES users(user_id),
+		board_id INTEGER REFERENCES messageBoard(board_id),
+		ip_address TEXT NOT NULL,
+		device_info TEXT,
+		content_preview TEXT,
+		flagged_harmful BOOLEAN DEFAULT 0,
+		harmful_flag_reason TEXT,
+		action TEXT NOT NULL,
+		timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+	''')
+
+	# Create moderator role request logs
+	cursor.execute('''
+	CREATE TABLE IF NOT EXISTS moderator_requests (
+		request_id INTEGER PRIMARY KEY AUTOINCREMENT,
+		requesting_user INTEGER REFERENCES users(user_id),
+		request_type TEXT NOT NULL,
+		board_id INTEGER REFERENCES messageBoard(board_id),
+		status TEXT DEFAULT 'pending',
+		reviewed_by INTEGER REFERENCES users(user_id),
+		reason TEXT,
 		timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 	''')

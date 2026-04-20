@@ -1,23 +1,3 @@
-# PASSWORD RECOVERY FUNCTIONS ---------------------------------
-
-def send_recovery_email(username: str, email: str) -> dict:
-    """
-    Request a password recovery email to be sent to the user.
-    Returns a dict with success and message.
-    """
-    command = f"SEND_RECOVERY_EMAIL {username} {email}"
-    response = _send_request(command)
-    return _parse_json_response(response)
-
-def reset_password(username: str, email: str, recovery_code: str, new_password: str) -> dict:
-    """
-    Reset the user's password using the recovery code.
-    Returns a dict with success and message.
-    """
-    # new_password may contain spaces, so quote if needed
-    command = f"RESET_PASSWORD {username} {email} {recovery_code} {new_password}"
-    response = _send_request(command)
-    return _parse_json_response(response)
 """
 client.py - Client side of the toString messaging application.
 
@@ -115,18 +95,41 @@ def login(username: str, password: str) -> dict:
     return {"username": data.get("username"), "role": data.get("role")}
 
 
-def register(username: str, password: str) -> dict:
+def register(username: str, password: str, email: str) -> dict:
     """
-    Register a new user account.
+    Register a new user account with email.
     Returns new user info dict with username and role on success.
     Raises Exception if username is taken or validation fails.
     """
-    command = f"REGISTER {username} {password}"
+    command = f"REGISTER {username} {password} {email}"
     response = _send_request(command)
     
     # Parse JSON response
     data = _parse_json_response(response)
     return {"username": data.get("username"), "role": data.get("role")}
+
+
+def send_recovery_email(username: str, email: str) -> dict:
+    """
+    Send a password recovery email to the user.
+    Returns success response with message.
+    Raises Exception on failure.
+    """
+    command = f"SEND_RECOVERY_EMAIL {username} {email}"
+    response = _send_request(command)
+    return _parse_json_response(response)
+
+
+def reset_password(username: str, email: str, recovery_code: str, new_password: str) -> dict:
+    """
+    Reset a user's password using email verification code.
+    Requires valid recovery code sent via email.
+    Returns success response dict.
+    Raises Exception on failure.
+    """
+    command = f"RESET_PASSWORD {username} {email} {recovery_code} {new_password}"
+    response = _send_request(command)
+    return _parse_json_response(response)
 
 # BOARD FUNCTIONS ---------------------------------
 

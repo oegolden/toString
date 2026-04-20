@@ -276,19 +276,133 @@ class App(tk.Tk):
         self.current_user = None   # str: username
         self.user_role     = None  # str: "user" | "moderator" | "admin"
 
-        # Initialize client connection to server
-        try:
-            client.connect("127.0.0.1", 1235)
-        except Exception as e:
-            messagebox.showerror(
-                "Connection Error",
-                f"Failed to connect to server:\n{str(e)}\n\nMake sure the server is running on port 1234."
-            )
+        # Show server connection dialog
+        if not self._show_server_config_dialog():
             self.destroy()
             return
-
+        
         # Show login screen first
         self._show_login()
+
+    def _show_server_config_dialog(self):
+        """
+        Show a dialog to configure server connection.
+        Returns True if connected successfully, False otherwise.
+        """
+        config_window = tk.Toplevel(self)
+        config_window.title("Server Configuration")
+        config_window.geometry("400x250")
+        config_window.resizable(False, False)
+        config_window.grab_set()
+        
+        # Center on parent window
+        self.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() - 400) // 2
+        y = self.winfo_y() + (self.winfo_height() - 250) // 2
+        config_window.geometry(f"+{max(0, x)}+{max(0, y)}")
+        
+        # Main frame
+        main_frame = tk.Frame(config_window, bg=BG_MEDIUM)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Title
+        title_label = tk.Label(
+            main_frame, text="Connect to Server",
+            font=("Ubuntu Condensed", 16, "bold"),
+            fg=TEXT_PRI, bg=BG_MEDIUM
+        )
+        title_label.pack(pady=(0, 20))
+        
+        # IP Address
+        ip_label = tk.Label(main_frame, text="Server IP:", font=FONT_BODY, fg=TEXT_PRI, bg=BG_MEDIUM)
+        ip_label.pack(anchor="w", pady=(10, 5))
+        ip_var = tk.StringVar(value="127.0.0.1")
+        ip_entry = tk.Entry(main_frame, textvariable=ip_var, font=FONT_INPUT, width=30)
+        ip_entry.pack(anchor="w", fill="x")
+        ip_entry.focus()
+        
+        # Port
+        port_label = tk.Label(main_frame, text="Server Port:", font=FONT_BODY, fg=TEXT_PRI, bg=BG_MEDIUM)
+        port_label.pack(anchor="w", pady=(10, 5))
+        port_var = tk.StringVar(value="1234")
+        port_entry = tk.Entry(main_frame, textvariable=port_var, font=FONT_INPUT, width=30)
+        port_entry.pack(anchor="w", fill="x")
+        
+        # Bind Enter keys for keyboard navigation
+        ip_entry.bind("<Return>", lambda e: port_entry.focus())
+        
+        # Info text
+        info_label = tk.Label(
+            main_frame,
+            text="Enter the server IP and port to connect.\nDefault: 127.0.0.1:1234",
+            font=FONT_SMALL, fg=TEXT_SEC, bg=BG_MEDIUM, justify="left"
+        )
+        info_label.pack(anchor="w", pady=(10, 15))
+        
+        # Button frame
+        button_frame = tk.Frame(main_frame, bg=BG_MEDIUM)
+        button_frame.pack(fill="x", pady=(10, 0))
+        
+        connection_result = {"success": False}
+        
+        def on_connect():
+            """Attempt connection with provided parameters."""
+            ip = ip_var.get().strip()
+            port_str = port_var.get().strip()
+            
+            if not ip:
+                messagebox.showerror("Input Error", "Please enter a server IP address")
+                return
+            
+            if not port_str:
+                messagebox.showerror("Input Error", "Please enter a server port")
+                return
+            
+            try:
+                port = int(port_str)
+                if port < 1024 or port > 65535:
+                    messagebox.showerror("Input Error", "Port must be between 1024 and 65535")
+                    return
+            except ValueError:
+                messagebox.showerror("Input Error", "Port must be a valid integer")
+                return
+            
+            try:
+                client.connect(ip, port)
+                connection_result["success"] = True
+                connection_result["ip"] = ip
+                connection_result["port"] = port
+                config_window.destroy()
+            except Exception as e:
+                messagebox.showerror("Connection Failed", f"Could not connect to {ip}:{port}\n\nError: {str(e)}")
+        
+        def on_use_defaults():
+            """Connect using default settings."""
+            try:
+                client.connect("127.0.0.1", 1234)
+                connection_result["success"] = True
+                connection_result["ip"] = "127.0.0.1"
+                connection_result["port"] = 1234
+                config_window.destroy()
+            except Exception as e:
+                messagebox.showerror(
+                    "Connection Failed",
+                    f"Could not connect to default server (127.0.0.1:1234)\n\nError: {str(e)}"
+                )
+        
+        # Bind Enter key on port_entry to submit form
+        port_entry.bind("<Return>", lambda e: on_connect())
+        
+        connect_btn = make_button(button_frame, "Connect", on_connect, bg=SUCCESS, padx=20)
+        connect_btn.pack(side="left", padx=(0, 10))
+        
+        default_btn = make_button(button_frame, "Use Defaults (127.0.0.1:1234)", on_use_defaults, bg=ACCENT)
+        default_btn.pack(side="left")
+        
+        # Wait for dialog to close
+        self.wait_window(config_window)
+        
+        return connection_result.get("success", False)
 
     def _show_login(self):
         """Replace current content with the login/register frame."""
@@ -330,7 +444,7 @@ class LoginFrame(tk.Frame):
     def _build(self):
         # Centered card
         card = tk.Frame(self, bg=BG_MEDIUM, bd=1, relief="flat")
-        card.place(relx=0.5, rely=0.5, anchor="center", width=420, height=550)  # Increased height for password checker
+        card.place(relx=0.5, rely=0.5, anchor="center", width=420, height=650)
 
         # Logo / title
         tk.Label(card, text=".toString()", font=("Georgia", 28, "bold"),
@@ -405,6 +519,18 @@ class LoginFrame(tk.Frame):
         self.pass_entry.bind("<Return>", lambda e: self._do_login())
         make_button(self.form_frame, "LOG IN", self._do_login).pack(
             fill="x", pady=(12, 0), ipady=4)
+        
+        # Password reset link
+        forgot_frame = tk.Frame(self.form_frame, bg=BG_MEDIUM)
+        forgot_frame.pack(fill="x", pady=(8, 0))
+        forgot_link = tk.Label(
+            forgot_frame, text="Forgot your password?",
+            font=FONT_SMALL, fg=ACCENT, bg=BG_MEDIUM,
+            cursor="hand2"
+        )
+        forgot_link.pack(side="left")
+        forgot_link.bind("<Button-1>", lambda e: self._show_password_reset_dialog())
+        
         # Quick test-login hint
         tk.Label(self.form_frame, text="Test: alice / pass123",
                  font=FONT_SMALL, fg=TEXT_MUTED, bg=BG_MEDIUM).pack(pady=(8, 0))
@@ -418,6 +544,8 @@ class LoginFrame(tk.Frame):
         self.confirm_var = tk.StringVar()
         
         self.user_entry = self._entry(self.form_frame, "Choose a username")
+        
+        self.email_entry = self._entry(self.form_frame, "Email address")
         
         # Password entry with variable binding
         self.pass_entry = self._entry(self.form_frame, "Password", show="•", textvariable=self.password_var)
@@ -455,10 +583,11 @@ class LoginFrame(tk.Frame):
 
     def _do_register(self):
         username = self._get_entry(self.user_entry, "Choose a username")
+        email = self._get_entry(self.email_entry, "Email address")
         password = self._get_entry(self.pass_entry, "Password")
         confirm = self._get_entry(self.pass2_entry, "Confirm password")
 
-        if not username or not password:
+        if not username or not email or not password:
             self.err_var.set("All fields are required.")
             return
 
@@ -480,7 +609,7 @@ class LoginFrame(tk.Frame):
 
         # Proceed with registration...
         try:
-            result = client.register(username, password)
+            result = client.register(username, password, email)
             self.app.on_login_success(result["username"], result["role"])
         except Exception as e:
             self.err_var.set(str(e))
@@ -512,6 +641,262 @@ class LoginFrame(tk.Frame):
             self.login_tab_btn.config(fg=TEXT_SEC)
             self.reg_tab_btn.config(fg=ACCENT)
             self._build_register_form()
+    
+    def _show_password_reset_dialog(self):
+        """Show a dialog to reset the user's password via email verification."""
+        reset_window = tk.Toplevel(self.app)
+        reset_window.title("Reset Password")
+        reset_window.geometry("450x380")
+        reset_window.resizable(False, False)
+        reset_window.grab_set()
+        
+        # Center on parent
+        self.app.update_idletasks()
+        x = self.app.winfo_x() + (self.app.winfo_width() - 450) // 2
+        y = self.app.winfo_y() + (self.app.winfo_height() - 380) // 2
+        reset_window.geometry(f"+{max(0, x)}+{max(0, y)}")
+        
+        # Main frame
+        main_frame = tk.Frame(reset_window, bg=BG_MEDIUM)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Title
+        title_label = tk.Label(
+            main_frame, text="Reset Your Password",
+            font=("Ubuntu Condensed", 16, "bold"),
+            fg=TEXT_PRI, bg=BG_MEDIUM
+        )
+        title_label.pack(pady=(0, 20))
+        
+        # Step indicator
+        step_label = tk.Label(
+            main_frame, text="Step 1 of 3: Verify Your Account",
+            font=FONT_SMALL, fg=TEXT_SEC, bg=BG_MEDIUM
+        )
+        step_label.pack(anchor="w", pady=(0, 15))
+        
+        # Username
+        user_label = tk.Label(main_frame, text="Username:", font=FONT_BODY, fg=TEXT_PRI, bg=BG_MEDIUM)
+        user_label.pack(anchor="w", pady=(10, 5))
+        user_var = tk.StringVar()
+        user_entry = tk.Entry(main_frame, textvariable=user_var, font=FONT_INPUT, width=35)
+        user_entry.pack(anchor="w", fill="x")
+        user_entry.focus()
+        
+        # Email
+        email_label = tk.Label(main_frame, text="Email Address:", font=FONT_BODY, fg=TEXT_PRI, bg=BG_MEDIUM)
+        email_label.pack(anchor="w", pady=(10, 5))
+        email_var = tk.StringVar()
+        email_entry = tk.Entry(main_frame, textvariable=email_var, font=FONT_INPUT, width=35)
+        email_entry.pack(anchor="w", fill="x")
+        email_entry.bind("<Return>", lambda e: on_send_code())
+        
+        # Info text
+        info_label = tk.Label(
+            main_frame,
+            text="We'll send a verification code to your email.\nMust match the email used during registration.",
+            font=FONT_SMALL, fg=TEXT_SEC, bg=BG_MEDIUM, justify="left"
+        )
+        info_label.pack(anchor="w", pady=(10, 15))
+        
+        # Button frame
+        button_frame = tk.Frame(main_frame, bg=BG_MEDIUM)
+        button_frame.pack(fill="x", pady=(10, 0))
+        
+        def on_send_code():
+            """Send recovery code to email."""
+            username = user_var.get().strip()
+            email = email_var.get().strip()
+            
+            if not username or not email:
+                messagebox.showerror("Input Error", "Please enter both username and email")
+                return
+            
+            try:
+                result = client.send_recovery_email(username, email)
+                messagebox.showinfo("Email Sent", result.get("message", "Recovery code sent to your email!"))
+                show_code_entry()
+            except Exception as e:
+                messagebox.showerror("Failed", f"Error: {str(e)}")
+        
+        def show_code_entry():
+            """Show Step 2: Enter recovery code."""
+            for w in main_frame.winfo_children():
+                w.destroy()
+            
+            title_label = tk.Label(
+                main_frame, text="Reset Your Password",
+                font=("Ubuntu Condensed", 16, "bold"),
+                fg=TEXT_PRI, bg=BG_MEDIUM
+            )
+            title_label.pack(pady=(0, 20))
+            
+            step_label = tk.Label(
+                main_frame, text="Step 2 of 3: Enter Recovery Code",
+                font=FONT_SMALL, fg=TEXT_SEC, bg=BG_MEDIUM
+            )
+            step_label.pack(anchor="w", pady=(0, 15))
+            
+            code_label = tk.Label(
+                main_frame, text="Recovery Code:",
+                font=FONT_BODY, fg=TEXT_PRI, bg=BG_MEDIUM
+            )
+            code_label.pack(anchor="w", pady=(10, 5))
+            
+            code_var = tk.StringVar()
+            code_entry = tk.Entry(main_frame, textvariable=code_var, font=FONT_INPUT, width=35)
+            code_entry.pack(anchor="w", fill="x")
+            code_entry.focus()
+            code_entry.bind("<Return>", lambda e: show_password_entry(code_var.get()))
+            
+            info = tk.Label(
+                main_frame,
+                text="Check your email for the 6-digit code.",
+                font=FONT_SMALL, fg=TEXT_SEC, bg=BG_MEDIUM
+            )
+            info.pack(anchor="w", pady=(10, 15))
+            
+            btn_frame = tk.Frame(main_frame, bg=BG_MEDIUM)
+            btn_frame.pack(fill="x", pady=(10, 0))
+            
+            next_btn = make_button(btn_frame, "Next", lambda: show_password_entry(code_var.get()), bg=SUCCESS, padx=20)
+            next_btn.pack(side="left", padx=(0, 10))
+            
+            back_btn = make_button(btn_frame, "Back", show_verification, bg=ACCENT)
+            back_btn.pack(side="left")
+        
+        def show_password_entry(recovery_code):
+            """Show Step 3: Enter new password."""
+            code = recovery_code.strip()
+            if not code:
+                messagebox.showerror("Input Error", "Please enter the recovery code")
+                return
+            
+            for w in main_frame.winfo_children():
+                w.destroy()
+            
+            title_label = tk.Label(
+                main_frame, text="Reset Your Password",
+                font=("Ubuntu Condensed", 16, "bold"),
+                fg=TEXT_PRI, bg=BG_MEDIUM
+            )
+            title_label.pack(pady=(0, 20))
+            
+            step_label = tk.Label(
+                main_frame, text="Step 3 of 3: Set New Password",
+                font=FONT_SMALL, fg=TEXT_SEC, bg=BG_MEDIUM
+            )
+            step_label.pack(anchor="w", pady=(0, 15))
+            
+            pass_label = tk.Label(
+                main_frame, text="New Password:",
+                font=FONT_BODY, fg=TEXT_PRI, bg=BG_MEDIUM
+            )
+            pass_label.pack(anchor="w", pady=(10, 5))
+            
+            pass_var = tk.StringVar()
+            pass_entry = tk.Entry(main_frame, textvariable=pass_var, font=FONT_INPUT, show="•", width=35)
+            pass_entry.pack(anchor="w", fill="x")
+            pass_entry.focus()
+            
+            conf_label = tk.Label(
+                main_frame, text="Confirm Password:",
+                font=FONT_BODY, fg=TEXT_PRI, bg=BG_MEDIUM
+            )
+            conf_label.pack(anchor="w", pady=(10, 5))
+            
+            conf_var = tk.StringVar()
+            conf_entry = tk.Entry(main_frame, textvariable=conf_var, font=FONT_INPUT, show="•", width=35)
+            conf_entry.pack(anchor="w", fill="x")
+            conf_entry.bind("<Return>", lambda e: on_complete_reset(code, pass_var.get(), conf_var.get()))
+            
+            info = tk.Label(
+                main_frame,
+                text="At least 8 characters recommended.",
+                font=FONT_SMALL, fg=TEXT_SEC, bg=BG_MEDIUM
+            )
+            info.pack(anchor="w", pady=(10, 15))
+            
+            btn_frame = tk.Frame(main_frame, bg=BG_MEDIUM)
+            btn_frame.pack(fill="x", pady=(10, 0))
+            
+            submit_btn = make_button(btn_frame, "Reset Password", lambda: on_complete_reset(code, pass_var.get(), conf_var.get()), bg=SUCCESS, padx=20)
+            submit_btn.pack(side="left", padx=(0, 10))
+            
+            back_btn = make_button(btn_frame, "Back", show_code_entry, bg=ACCENT)
+            back_btn.pack(side="left")
+        
+        def on_complete_reset(recovery_code, new_pass, conf_pass):
+            """Complete the password reset."""
+            username = user_var.get().strip()
+            email = email_var.get().strip()
+            
+            if len(new_pass) < 4:
+                messagebox.showerror("Input Error", "Password must be at least 4 characters")
+                return
+            
+            if new_pass != conf_pass:
+                messagebox.showerror("Password Mismatch", "Passwords do not match")
+                return
+            
+            try:
+                result = client.reset_password(username, email, recovery_code, new_pass)
+                messagebox.showinfo("Success", result.get("message", "Password reset successfully! Please log in with your new password."))
+                reset_window.destroy()
+            except Exception as e:
+                messagebox.showerror("Reset Failed", f"Error: {str(e)}")
+        
+        def show_verification():
+            """Return to Step 1."""
+            for w in main_frame.winfo_children():
+                w.destroy()
+            
+            title_label = tk.Label(
+                main_frame, text="Reset Your Password",
+                font=("Ubuntu Condensed", 16, "bold"),
+                fg=TEXT_PRI, bg=BG_MEDIUM
+            )
+            title_label.pack(pady=(0, 20))
+            
+            step_label = tk.Label(
+                main_frame, text="Step 1 of 3: Verify Your Account",
+                font=FONT_SMALL, fg=TEXT_SEC, bg=BG_MEDIUM
+            )
+            step_label.pack(anchor="w", pady=(0, 15))
+            
+            user_label = tk.Label(main_frame, text="Username:", font=FONT_BODY, fg=TEXT_PRI, bg=BG_MEDIUM)
+            user_label.pack(anchor="w", pady=(10, 5))
+            user_entry = tk.Entry(main_frame, textvariable=user_var, font=FONT_INPUT, width=35)
+            user_entry.pack(anchor="w", fill="x")
+            user_entry.focus()
+            
+            email_label = tk.Label(main_frame, text="Email Address:", font=FONT_BODY, fg=TEXT_PRI, bg=BG_MEDIUM)
+            email_label.pack(anchor="w", pady=(10, 5))
+            email_entry = tk.Entry(main_frame, textvariable=email_var, font=FONT_INPUT, width=35)
+            email_entry.pack(anchor="w", fill="x")
+            email_entry.bind("<Return>", lambda e: on_send_code())
+            
+            info_label = tk.Label(
+                main_frame,
+                text="We'll send a verification code to your email.\nMust match the email used during registration.",
+                font=FONT_SMALL, fg=TEXT_SEC, bg=BG_MEDIUM, justify="left"
+            )
+            info_label.pack(anchor="w", pady=(10, 15))
+            
+            button_frame = tk.Frame(main_frame, bg=BG_MEDIUM)
+            button_frame.pack(fill="x", pady=(10, 0))
+            
+            send_btn = make_button(button_frame, "Send Code", on_send_code, bg=SUCCESS, padx=20)
+            send_btn.pack(side="left", padx=(0, 10))
+            
+            cancel_btn = make_button(button_frame, "Cancel", reset_window.destroy, bg=ACCENT)
+            cancel_btn.pack(side="left")
+        
+        send_btn = make_button(button_frame, "Send Code", on_send_code, bg=SUCCESS, padx=20)
+        send_btn.pack(side="left", padx=(0, 10))
+        
+        cancel_btn = make_button(button_frame, "Cancel", reset_window.destroy, bg=ACCENT)
+        cancel_btn.pack(side="left")
 
 class MainFrame(tk.Frame):
     """
