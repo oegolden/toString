@@ -1086,8 +1086,8 @@ class Sidebar(tk.Frame):
         """Popup dialog to create a new board."""
         win = tk.Toplevel(self, bg=BG_MEDIUM)
         win.title("Create Board")
-        win.geometry("380x260")
-        win.resizable(False, False)
+        win.geometry("420x320")
+        win.resizable(True, True)
         win.grab_set()
 
         make_label(win, "Create a New Board", font=FONT_BOARD).pack(pady=(20, 4))
@@ -1101,8 +1101,11 @@ class Sidebar(tk.Frame):
                           insertbackground=TEXT_PRI, relief="flat")
         desc_e.pack(fill="x", padx=24, ipady=7, pady=4)
 
+
         err_lbl = make_label(win, "", font=FONT_SMALL, fg=DANGER)
         err_lbl.pack()
+        err_lbl2 = make_label(win, "", font=FONT_SMALL, fg=DANGER)
+        err_lbl2.pack()
 
         def submit():
             name = name_e.get().strip()
@@ -1122,7 +1125,12 @@ class Sidebar(tk.Frame):
                 self._populate()
                 self.on_board_select(new_board)
             except Exception as e:
-                err_lbl.config(text=str(e))
+                if len(str(e)) > 30:
+                    parts = (str(e)).split(":", 1)
+                    err_lbl.config(text= parts[0].strip())
+                    err_lbl2.config(text=parts[1].strip())
+                else:
+                    err_lbl.config(text=str(e))
 
         make_button(win, "CREATE BOARD", submit).pack(pady=8, ipadx=10)
 

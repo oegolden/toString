@@ -2,23 +2,40 @@
 content_moderation.py - Content moderation library for harmful content detection.
 
 This module provides utilities to detect and flag potentially harmful content
-in posts and messages using heuristic checks and pattern matching.
+in posts and messages using profanity-check2 and heuristic pattern matching.
 
 Features:
-- Profanity detection
+- Profanity detection (via profanity-check2 library)
 - Spam pattern detection
 - All-caps spam detection
 - Excessive special characters detection
-- Content length validation
+- Suspicious keyword detection
 """
 
 import re
 from typing import Tuple, Optional
 
-# Common profanities and offensive words (simple blocklist)
-PROFANITIES = {
-    # Censored for this example, but in production would be more comprehensive
-    "badword1", "badword2", "offensive1", "offensive2",
+# Try importing profanity-check2 for production-grade profanity detection
+PROFANITY_CHECK_AVAILABLE = False
+try:
+    from profanity_check2 import predict as check_profanity_predict
+    PROFANITY_CHECK_AVAILABLE = True
+except ImportError:
+    try:
+        # Fallback to better-profanity if profanity-check2 not available
+        from better_profanity import profanity
+        profanity.load_censor_words()
+        PROFANITY_CHECK_AVAILABLE = True
+        check_profanity_predict = None
+    except ImportError:
+        # Last resort: manual profanity list
+        PROFANITY_CHECK_AVAILABLE = False
+        check_profanity_predict = None
+
+# Minimal fallback profanity list (used if no library available)
+PROFANITIES_FALLBACK = {
+    "damn", "hell", "crap", "piss", "ass", "bastard", "bitch",
+    "dick", "dumbass", "fart", "fatass", "fuck", "jackass", "shit", "slut",
 }
 
 # Spam patterns
@@ -107,11 +124,44 @@ class ContentModerator:
         return False, None
     
     def _check_profanity(self, content: str) -> Tuple[bool, Optional[str]]:
-        """Check for profanity and offensive language."""
+        """Check for profanity and offensive language using profanity-check2."""
+        if not content or len(content.strip()) == 0:
+            return False, None
+        
+        try:
+            # Try using profanity-check2 (primary library)
+            if check_profanity_predict is not None:
+                try:
+                    # profanity-check2 API: predict returns 1 if profanity found, 0 otherwise
+                    result = check_profanity_predict(content)
+                    if result == 1:
+                        return True, "Content contains inappropriate language"
+                except Exception:
+                    # If profanity-check2 fails, try better-profanity
+                    try:
+                        from better_profanity import profanity as bp
+                        if bp.contains_profanity(content):
+                            return True, "Content contains inappropriate language"
+                    except Exception:
+                        pass
+            else:
+                # Fallback to better-profanity if available
+                try:
+                    from better_profanity import profanity as bp
+                    if bp.contains_profanity(content):
+                        return True, "Content contains inappropriate language"
+                except Exception:
+                    pass
+        except Exception as e:
+            # Silent fallback, proceed to manual check
+            pass
+        
+        # Final fallback: manual keyword matching
         content_lower = content.lower()
-        for word in PROFANITIES:
+        for word in PROFANITIES_FALLBACK:
             if word in content_lower:
-                return True, f"Content contains inappropriate language"
+                return True, "Content contains inappropriate language"
+        
         return False, None
     
     def _check_spam(self, content: str) -> Tuple[bool, Optional[str]]:

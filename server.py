@@ -388,6 +388,21 @@ def handle_request(request):
 			if not board_name.startswith("r/"):
 				board_name = "r/" + board_name
 			
+			# Check board name and description for harmful content
+			moderator = get_content_moderator()
+			name_flagged, name_reason = moderator.moderate(board_name)
+			desc_flagged, desc_reason = moderator.moderate(board_desc)
+			
+			if name_flagged:
+				send_error(return_socket, f"Board name violates content policy: {name_reason}")
+				log_audit("CREATE_BOARD", username, details=f"Rejected board creation - harmful name: {board_name}", success=False)
+				return
+			
+			if desc_flagged:
+				send_error(return_socket, f"Board description violates content policy: {desc_reason}")
+				log_audit("CREATE_BOARD", username, details=f"Rejected board creation - harmful description", success=False)
+				return
+			
 			# Check if board name already exists
 			for board in _boards.values():
 				if board["name"] == board_name:
@@ -527,6 +542,10 @@ def handle_request(request):
 			
 			new_content = command_parts[3]
 			
+			# Check content for harmful patterns
+			moderator = get_content_moderator()
+			flagged_harmful, flag_reason = moderator.moderate(new_content)
+			
 			# Find and edit the message
 			for board_msgs in _messages.values():
 				for msg in board_msgs:
@@ -535,6 +554,8 @@ def handle_request(request):
 							send_error(return_socket, "You can only edit your own messages")
 							return
 						msg["content"] = new_content + " (edited)"
+						msg["flagged"] = flagged_harmful
+						msg["flag_reason"] = flag_reason if flagged_harmful else None
 						send_json(return_socket, {"success": True})
 						return
 			
@@ -591,6 +612,10 @@ def handle_request(request):
 			
 			content = command_parts[3]
 			
+			# Check content for harmful patterns
+			moderator = get_content_moderator()
+			flagged_harmful, flag_reason = moderator.moderate(content)
+			
 			# Find the message and add comment
 			for board_msgs in _messages.values():
 				for msg in board_msgs:
@@ -599,10 +624,13 @@ def handle_request(request):
 							"id": _next_comment_id,
 							"author": username,
 							"content": content,
-							"timestamp": time.strftime("%Y-%m-%d %H:%M")
+							"timestamp": time.strftime("%Y-%m-%d %H:%M"),
+							"flagged": flagged_harmful,
+							"flag_reason": flag_reason if flagged_harmful else None
 						}
 						_next_comment_id += 1
 						msg["comments"].append(comment)
+						log_post(comment["id"], username, msg["board_id"], client_ip, device_info, content, "COMMENT", flagged_harmful, flag_reason)
 						send_json(return_socket, comment)
 						return
 			
