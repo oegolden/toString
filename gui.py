@@ -1796,7 +1796,7 @@ class AdminPanel(tk.Toplevel):
         self._refresh_board_mods()
 
     def _build_audit_logs_tab(self, parent):
-        """Build tab for viewing audit logs."""
+        """Build tab for viewing audit logs with filtering by type."""
         tk.Label(parent, text="Audit Logs",
                  font=FONT_BOARD, fg=ACCENT, bg=BG_MEDIUM).pack(pady=12, padx=12, anchor="w")
 
@@ -1804,6 +1804,18 @@ class AdminPanel(tk.Toplevel):
         controls_frame = tk.Frame(parent, bg=BG_MEDIUM)
         controls_frame.pack(fill="x", padx=12, pady=8)
 
+        # Log type filter
+        tk.Label(controls_frame, text="Type:", font=FONT_BODY,
+                 fg=TEXT_PRI, bg=BG_MEDIUM).pack(side="left", padx=4)
+        self.audit_log_type_var = tk.StringVar(value="all")
+        type_combo = ttk.Combobox(
+            controls_frame, textvariable=self.audit_log_type_var,
+            values=["all", "login", "moderator", "post", "request"],
+            state="readonly", font=FONT_BODY, width=12
+        )
+        type_combo.pack(side="left", padx=4)
+
+        # Limit
         tk.Label(controls_frame, text="Limit:", font=FONT_BODY,
                  fg=TEXT_PRI, bg=BG_MEDIUM).pack(side="left", padx=4)
         self.audit_limit_var = tk.StringVar(value="50")
@@ -1823,7 +1835,7 @@ class AdminPanel(tk.Toplevel):
 
         self.audit_logs_text = scrolledtext.ScrolledText(
             scroll_frame, font=FONT_SMALL, bg=BG_LIGHT, fg=TEXT_PRI,
-            yscrollcommand=scrollbar.set, relief="flat", height=15, width=80
+            yscrollcommand=scrollbar.set, relief="flat", height=15, width=100
         )
         self.audit_logs_text.pack(fill="both", expand=True)
         scrollbar.config(command=self.audit_logs_text.yview)
@@ -1921,7 +1933,7 @@ class AdminPanel(tk.Toplevel):
         self.board_mods_text.config(state="disabled")
 
     def _load_audit_logs(self):
-        """Load and display audit logs."""
+        """Load and display audit logs with comprehensive filtering and formatting."""
         self.audit_logs_text.config(state="normal")
         self.audit_logs_text.delete("1.0", "end")
         
@@ -1932,30 +1944,121 @@ class AdminPanel(tk.Toplevel):
             self.audit_logs_text.config(state="disabled")
             return
         
+        log_type = self.audit_log_type_var.get()
+        
         try:
-            response = client.get_audit_logs(self.app.current_user, limit)
-            logs = response.get("logs", [])
-            total = response.get("total_logs", 0)
+            response = client.get_audit_logs(self.app.current_user, log_type, limit)
             
-            self.audit_logs_text.insert("end", f"Total logs: {total} | Showing last {min(limit, len(logs))}\n")
-            self.audit_logs_text.insert("end", "─" * 78 + "\n\n")
+            # Display summary
+            total_login = response.get("total_login_logs", 0)
+            total_moderator = response.get("total_moderator_logs", 0)
+            total_post = response.get("total_post_logs", 0)
+            total_request = response.get("total_request_logs", 0)
             
-            if logs:
-                for log in reversed(logs):  # Show newest first
+            self.audit_logs_text.insert("end", f"Audit Log Summary:\n")
+            self.audit_logs_text.insert("end", f"  Login Events: {total_login} | Moderator Events: {total_moderator} | ")
+            self.audit_logs_text.insert("end", f"Post Events: {total_post} | Requests: {total_request}\n")
+            self.audit_logs_text.insert("end", "═" * 100 + "\n\n")
+            
+            # Display logs by type
+            has_logs = False
+            
+            # Login Logs
+            if response.get("login_logs"):
+                has_logs = True
+                self.audit_logs_text.insert("end", "🔐 LOGIN AUDIT LOGS\n")
+                self.audit_logs_text.insert("end", "─" * 100 + "\n")
+                for log in reversed(response.get("login_logs", [])):
+                    timestamp = log.get("timestamp", "N/A")
+                    username = log.get("username", "unknown")
+                    user_id = log.get("user_id", "?")
+                    success = "✓ SUCCESS" if log.get("success") else "✗ FAILED"
+                    ip = log.get("ip_address", "?")
+                    device = log.get("device_info", "?")
+                    reason = log.get("failure_reason", "")
+                    
+                    self.audit_logs_text.insert("end", f"[{timestamp}] {success}\n")
+                    self.audit_logs_text.insert("end", f"  User: {username} (ID: {user_id}) | IP: {ip} | Device: {device}\n")
+                    if reason:
+                        self.audit_logs_text.insert("end", f"  Reason: {reason}\n")
+                    self.audit_logs_text.insert("end", "\n")
+            
+            # Moderator Logs
+            if response.get("moderator_logs"):
+                has_logs = True
+                self.audit_logs_text.insert("end", "👮 MODERATOR ACTION LOGS\n")
+                self.audit_logs_text.insert("end", "─" * 100 + "\n")
+                for log in reversed(response.get("moderator_logs", [])):
                     timestamp = log.get("timestamp", "N/A")
                     action = log.get("action", "UNKNOWN")
                     performed_by = log.get("performed_by", "system")
-                    target = log.get("target_user", "N/A")
-                    board = log.get("board_id", "N/A")
+                    performed_by_id = log.get("performed_by_id", "?")
+                    target_user = log.get("target_user", "N/A")
+                    target_user_id = log.get("target_user_id", "?")
+                    board_id = log.get("board_id", "N/A")
                     details = log.get("details", "")
+                    ip = log.get("ip_address", "?")
                     
                     self.audit_logs_text.insert("end", f"[{timestamp}] {action}\n")
-                    self.audit_logs_text.insert("end", f"  By: {performed_by} | Target: {target} | Board: {board}\n")
+                    self.audit_logs_text.insert("end", f"  By: {performed_by} (ID: {performed_by_id})\n")
+                    if target_user:
+                        self.audit_logs_text.insert("end", f"  Target: {target_user} (ID: {target_user_id})\n")
+                    if board_id != "N/A":
+                        self.audit_logs_text.insert("end", f"  Board ID: {board_id}\n")
+                    self.audit_logs_text.insert("end", f"  IP: {ip}\n")
                     if details:
                         self.audit_logs_text.insert("end", f"  Details: {details}\n")
                     self.audit_logs_text.insert("end", "\n")
-            else:
-                self.audit_logs_text.insert("end", "No audit logs found.\n")
+            
+            # Post Logs
+            if response.get("post_logs"):
+                has_logs = True
+                self.audit_logs_text.insert("end", "📝 POST/COMMENT AUDIT LOGS\n")
+                self.audit_logs_text.insert("end", "─" * 100 + "\n")
+                for log in reversed(response.get("post_logs", [])):
+                    timestamp = log.get("timestamp", "N/A")
+                    action = log.get("action", "POST")
+                    username = log.get("username", "unknown")
+                    user_id = log.get("user_id", "?")
+                    board_id = log.get("board_id", "?")
+                    flagged = log.get("flagged_harmful", False)
+                    reason = log.get("harmful_flag_reason", "")
+                    ip = log.get("ip_address", "?")
+                    content = log.get("content_preview", "")[:50]
+                    
+                    flag_marker = "🚩 FLAGGED" if flagged else "✓ CLEAN"
+                    self.audit_logs_text.insert("end", f"[{timestamp}] {action} - {flag_marker}\n")
+                    self.audit_logs_text.insert("end", f"  User: {username} (ID: {user_id}) | Board: {board_id}\n")
+                    self.audit_logs_text.insert("end", f"  IP: {ip}\n")
+                    if content:
+                        self.audit_logs_text.insert("end", f"  Content: \"{content}...\"\n")
+                    if reason:
+                        self.audit_logs_text.insert("end", f"  Reason: {reason}\n")
+                    self.audit_logs_text.insert("end", "\n")
+            
+            # Moderator Request Logs
+            if response.get("request_logs"):
+                has_logs = True
+                self.audit_logs_text.insert("end", "📋 MODERATOR REQUEST LOGS\n")
+                self.audit_logs_text.insert("end", "─" * 100 + "\n")
+                for log in reversed(response.get("request_logs", [])):
+                    timestamp = log.get("timestamp", "N/A")
+                    username = log.get("username", "unknown")
+                    user_id = log.get("user_id", "?")
+                    request_type = log.get("request_type", "UNKNOWN")
+                    status = log.get("status", "PENDING")
+                    details = log.get("details", "")
+                    ip = log.get("ip_address", "?")
+                    
+                    self.audit_logs_text.insert("end", f"[{timestamp}] {request_type} - {status}\n")
+                    self.audit_logs_text.insert("end", f"  User: {username} (ID: {user_id}) | IP: {ip}\n")
+                    if details:
+                        self.audit_logs_text.insert("end", f"  Details: {details}\n")
+                    self.audit_logs_text.insert("end", "\n")
+            
+            if not has_logs:
+                self.audit_logs_text.insert("end", f"No audit logs of type '{log_type}' found.\n")
+        
         except Exception as e:
             self.audit_logs_text.insert("end", f"Error loading audit logs: {str(e)}\n")
         

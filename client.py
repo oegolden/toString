@@ -70,14 +70,28 @@ def connect(ip: str = server_ip, port: int = server_port):
 
 
 def disconnect():
-    """Disconnect from the server."""
+    """Disconnect from the server with proper SSL shutdown."""
     global server_socket
     if server_socket:
         try:
+            # Attempt graceful close by sending "close" command first
+            try:
+                server_socket.send(b"close")
+            except:
+                pass
+            
+            # Properly shutdown SSL connection
+            try:
+                server_socket.unwrap()
+            except:
+                pass
+            
+            # Close the underlying socket
             server_socket.close()
         except:
             pass
-        server_socket = None
+        finally:
+            server_socket = None
 
 # AUTHORIZATION FUNCTIONS ---------------------------------
 
@@ -306,12 +320,20 @@ def get_moderated_boards(username: str) -> dict:
     return _parse_json_response(response)
 
 
-def get_audit_logs(admin_username: str, limit: int = 100) -> dict:
+def get_audit_logs(admin_username: str, log_type: str = "all", limit: int = 100) -> dict:
     """
     Retrieve audit logs. Admin only.
-    Returns dict with audit logs and total log count.
+    Returns dict with different log types (login, moderator, post, request).
+    
+    Args:
+        admin_username: Admin user making the request
+        log_type: Type of logs to retrieve ("all", "login", "moderator", "post", "request")
+        limit: Maximum number of logs to return
+    
+    Returns:
+        Dict with log counts and log entries by type
     """
-    command = f"GET_AUDIT_LOGS {admin_username} {limit}"
+    command = f"GET_AUDIT_LOGS {admin_username} {log_type} {limit}"
     response = _send_request(command)
     return _parse_json_response(response)
 

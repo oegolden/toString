@@ -6,3 +6,4 @@ aiosqlite
 aiosqlitepool
 python-dotenv
 cryptography
+profanity-check2

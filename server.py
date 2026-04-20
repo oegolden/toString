@@ -42,10 +42,21 @@ def verify_password(stored: str, provided: str) -> bool:
 		return False
 
 # Pre-hash the mock users' passwords
+# Add userIDs for audit logging (maps username to unique ID)
+_next_user_id = 1
+_user_id_map = {}  # username -> user_id
+
 _users = {
-	"alice":     {"password": hash_password("pass123"), "role": "user", "email": "alice@example.com"},
-	"bob":       {"password": hash_password("pass456"), "role": "moderator", "email": "bob@example.com"},
-	"admin":     {"password": hash_password("admin"),   "role": "admin", "email": "admin@example.com"},
+	"alice":     {"password": hash_password("pass123"), "role": "user", "email": "alice@example.com", "user_id": 1},
+	"bob":       {"password": hash_password("pass456"), "role": "moderator", "email": "bob@example.com", "user_id": 2},
+	"admin":     {"password": hash_password("admin"),   "role": "admin", "email": "admin@example.com", "user_id": 3},
+}
+
+# Map usernames to userIDs for quick lookup
+_user_id_map = {
+	"alice": 1,
+	"bob": 2,
+	"admin": 3,
 }
 
 _boards = {
@@ -69,7 +80,20 @@ _board_moderators = {
     4: {"bob"},
 }
 
-# Audit log for tracking role changes and moderator actions
+# Separate audit logs for different event types
+# Login audit: tracks all login attempts (success and failures)
+_login_audit_logs = []
+
+# Moderator audit: tracks role changes and board moderator assignments
+_moderator_audit_logs = []
+
+# Post audit: tracks all posts and comments with harmful content flags
+_post_audit_logs = []
+
+# Moderator request audit: tracks requests for role/moderator upgrades
+_moderator_request_logs = []
+
+# Audit log for tracking role changes and moderator actions (legacy, deprecated)
 _audit_logs = []
 
 _messages = {
@@ -99,8 +123,15 @@ def send_message(connection_socket, message):
 	try:
 		connection_socket.send(message.encode('utf-8'))
 		print(f"Sent: {message}")
+	except ssl.SSLError as e:
+		# Silently handle SSL EOF errors - client disconnected
+		if "EOF occurred in violation of protocol" in str(e):
+			pass
+		else:
+			print(f"SSL Error sending message: {e}")
 	except Exception as e:
-		print(f"Error sending message: {e}")
+		# Silently ignore errors for closed connections
+		pass
 
 def send_json(connection_socket, data):
 	"""Send a JSON response to the specified socket."""
@@ -108,8 +139,15 @@ def send_json(connection_socket, data):
 		response = json.dumps(data)
 		connection_socket.send(response.encode('utf-8'))
 		print(f"Sent JSON: {response[:100]}...")
+	except ssl.SSLError as e:
+		# Silently handle SSL EOF errors - client disconnected
+		if "EOF occurred in violation of protocol" in str(e):
+			pass
+		else:
+			print(f"SSL Error sending JSON: {e}")
 	except Exception as e:
-		print(f"Error sending JSON: {e}")
+		# Silently ignore errors for closed connections
+		pass
 
 
 def send_error(connection_socket, error_message):
@@ -119,11 +157,17 @@ def send_error(connection_socket, error_message):
 
 
 def log_audit(action, performed_by, target_user=None, board_id=None, details=None, ip_address=None, device_info=None, success=True):
-	"""Log audit event for security tracking."""
+	"""Log audit event for security tracking (legacy, use specific log functions)."""
+	# Get user IDs from usernames
+	performed_by_id = _user_id_map.get(performed_by, None)
+	target_user_id = _user_id_map.get(target_user, None) if target_user else None
+	
 	log_entry = {
 		"action": action,
 		"performed_by": performed_by,
+		"performed_by_id": performed_by_id,
 		"target_user": target_user,
+		"target_user_id": target_user_id,
 		"board_id": board_id,
 		"details": details,
 		"ip_address": ip_address,
@@ -132,12 +176,15 @@ def log_audit(action, performed_by, target_user=None, board_id=None, details=Non
 		"timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
 	}
 	_audit_logs.append(log_entry)
-	print(f"[AUDIT] {action} by {performed_by}: {details} | IP: {ip_address} | Device: {device_info} | Success: {success}")
+	_moderator_audit_logs.append(log_entry)
+	print(f"[AUDIT] {action} by {performed_by}(ID:{performed_by_id}): {details} | IP: {ip_address} | Device: {device_info} | Success: {success}")
 
 
-def log_login(username, ip_address, device_info, success, failure_reason=None):
-	"""Log login attempt for security tracking."""
+def log_login_attempt(username, ip_address, device_info, success, failure_reason=None):
+	"""Log login attempt for security tracking (replaces log_login)."""
+	user_id = _user_id_map.get(username, None)
 	log_entry = {
+		"user_id": user_id,
 		"username": username,
 		"ip_address": ip_address,
 		"device_info": device_info,
@@ -145,17 +192,39 @@ def log_login(username, ip_address, device_info, success, failure_reason=None):
 		"failure_reason": failure_reason,
 		"timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
 	}
-	if not hasattr(log_login, 'attempts'):
-		log_login.attempts = []
-	log_login.attempts.append(log_entry)
+	_login_audit_logs.append(log_entry)
 	status = "SUCCESS" if success else f"FAILED ({failure_reason})"
-	print(f"[LOGIN] {username} | Status: {status} | IP: {ip_address} | Device: {device_info}")
+	print(f"[LOGIN] {username}(ID:{user_id}) | Status: {status} | IP: {ip_address} | Device: {device_info}")
 
 
-def log_post(message_id, username, board_id, ip_address, device_info, content_preview, action="POST", flagged_harmful=False, reason=None):
-	"""Log post action for content tracking."""
+def log_moderator_action(action, performed_by, target_user=None, board_id=None, details=None, ip_address=None, device_info=None, success=True):
+	"""Log moderator actions: promotions, demotions, board assignments."""
+	performed_by_id = _user_id_map.get(performed_by, None)
+	target_user_id = _user_id_map.get(target_user, None) if target_user else None
+	
+	log_entry = {
+		"action": action,
+		"performed_by": performed_by,
+		"performed_by_id": performed_by_id,
+		"target_user": target_user,
+		"target_user_id": target_user_id,
+		"board_id": board_id,
+		"details": details,
+		"ip_address": ip_address,
+		"device_info": device_info,
+		"success": success,
+		"timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+	}
+	_moderator_audit_logs.append(log_entry)
+	print(f"[MODERATOR] {action}: {performed_by}(ID:{performed_by_id}) -> {target_user}(ID:{target_user_id}) on board {board_id} | IP: {ip_address}")
+
+
+def log_post_action(message_id, username, board_id, ip_address, device_info, content_preview, action="POST", flagged_harmful=False, reason=None):
+	"""Log post/comment action for content tracking."""
+	user_id = _user_id_map.get(username, None)
 	log_entry = {
 		"message_id": message_id,
+		"user_id": user_id,
 		"username": username,
 		"board_id": board_id,
 		"ip_address": ip_address,
@@ -166,11 +235,36 @@ def log_post(message_id, username, board_id, ip_address, device_info, content_pr
 		"harmful_flag_reason": reason,
 		"timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
 	}
-	if not hasattr(log_post, 'posts'):
-		log_post.posts = []
-	log_post.posts.append(log_entry)
+	_post_audit_logs.append(log_entry)
 	harmful_flag = f" [FLAGGED: {reason}]" if flagged_harmful else ""
-	print(f"[POST] {action} by {username} on board {board_id} | IP: {ip_address}{harmful_flag}")
+	print(f"[POST] {action} by {username}(ID:{user_id}) on board {board_id} | IP: {ip_address}{harmful_flag}")
+
+
+def log_moderator_request(username, request_type, details=None, ip_address=None, device_info=None):
+	"""Log moderator/role upgrade requests."""
+	user_id = _user_id_map.get(username, None)
+	log_entry = {
+		"user_id": user_id,
+		"username": username,
+		"request_type": request_type,  # "MODERATOR_UPGRADE", "BOARD_MODERATOR", etc.
+		"details": details,
+		"ip_address": ip_address,
+		"device_info": device_info,
+		"status": "PENDING",
+		"timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+	}
+	_moderator_request_logs.append(log_entry)
+	print(f"[MODERATOR_REQUEST] {username}(ID:{user_id}) requested {request_type} | IP: {ip_address}")
+
+
+def log_login(username, ip_address, device_info, success, failure_reason=None):
+	"""Wrapper for backward compatibility."""
+	log_login_attempt(username, ip_address, device_info, success, failure_reason)
+
+
+def log_post(message_id, username, board_id, ip_address, device_info, content_preview, action="POST", flagged_harmful=False, reason=None):
+	"""Wrapper for backward compatibility."""
+	log_post_action(message_id, username, board_id, ip_address, device_info, content_preview, action, flagged_harmful, reason)
 
 
 def extract_device_info(request_metadata=None):
@@ -215,27 +309,50 @@ def handle_connection(connection_socket, connection_id, address):
 	client_ip = address[0] if isinstance(address, tuple) else str(address)
 	print(f"[CONNECTION] New connection from {client_ip}")
 	
-	while True:
-		# receive data in bytes
-		data = connection_socket.recv(1024)
-
-		# decode the received data to string 
-		message = data.decode()
-		print("Got message from", address, ":", message)
-
-		# if the message is "close", close the connection and remove from dict
-		if message == "close":
-			break
-
-		# add request to the request queue with IP address
-		with lock:
-			global request_queue
-			request_queue.append([message, connection_socket, connection_id, address, client_ip])
+	try:
+		while True:
+			# receive data in bytes
+			try:
+				data = connection_socket.recv(1024)
+			except (ssl.SSLError, BrokenPipeError):
+				break
 			
-	connection_socket.close()
-	global connection_dict
-	del connection_dict[connection_id]
-	print(f"Closing connection {connection_id} from server side with", address)
+			if not data:
+				break
+
+			# decode the received data to string 
+			message = data.decode()
+			print("Got message from", address, ":", message)
+
+			# if the message is "close", close the connection and remove from dict
+			if message == "close":
+				break
+
+			# add request to the request queue with IP address
+			with lock:
+				global request_queue
+				request_queue.append([message, connection_socket, connection_id, address, client_ip])
+	
+	except Exception as e:
+		if "EOF occurred in violation of protocol" not in str(e):
+			print(f"Connection error from {address}: {e}")
+	
+	finally:
+		# Properly close the SSL connection
+		try:
+			connection_socket.unwrap()
+		except:
+			pass
+		
+		try:
+			connection_socket.close()
+		except:
+			pass
+		
+		global connection_dict
+		if connection_id in connection_dict:
+			del connection_dict[connection_id]
+		print(f"Closing connection {connection_id} from server side with {address}")
 	
 
 """ terminate_connection(): closes the connection at the specified connection_id
@@ -661,7 +778,7 @@ def handle_request(request):
 			
 			# Upgrade user to moderator
 			_users[target_username]["role"] = "moderator"
-			log_audit("UPGRADE_USER", admin_username, target_username, None, f"Upgraded {target_username} to moderator", client_ip, device_info)
+			log_moderator_action("UPGRADE_USER", admin_username, target_username, None, f"Upgraded {target_username} to moderator", client_ip, device_info, success=True)
 			
 			send_json(return_socket, {
 				"success": True,
@@ -700,7 +817,7 @@ def handle_request(request):
 			for board_id in list(_board_moderators.keys()):
 				_board_moderators[board_id].discard(target_username)
 			
-			log_audit("DOWNGRADE_USER", admin_username, target_username, None, f"Downgraded {target_username} to regular user", client_ip, device_info)
+			log_moderator_action("DOWNGRADE_USER", admin_username, target_username, None, f"Downgraded {target_username} to regular user", client_ip, device_info, success=True)
 			
 			send_json(return_socket, {
 				"success": True,
@@ -738,7 +855,7 @@ def handle_request(request):
 			
 			# Assign moderator to board
 			_board_moderators.setdefault(board_id, set()).add(target_username)
-			log_audit("ASSIGN_BOARD_MODERATOR", admin_username, target_username, board_id, f"Assigned {target_username} as moderator for board {board_id}", client_ip, device_info)
+			log_moderator_action("ASSIGN_BOARD_MODERATOR", admin_username, target_username, board_id, f"Assigned {target_username} as moderator for board {board_id}", client_ip, device_info, success=True)
 			
 			send_json(return_socket, {
 				"success": True,
@@ -778,7 +895,7 @@ def handle_request(request):
 			
 			# Remove moderator from board
 			_board_moderators[board_id].discard(target_username)
-			log_audit("REMOVE_BOARD_MODERATOR", admin_username, target_username, board_id, f"Removed {target_username} as moderator from board {board_id}", client_ip, device_info)
+			log_moderator_action("REMOVE_BOARD_MODERATOR", admin_username, target_username, board_id, f"Removed {target_username} as moderator from board {board_id}", client_ip, device_info, success=True)
 			
 			send_json(return_socket, {
 				"success": True,
@@ -831,9 +948,9 @@ def handle_request(request):
 			})
 
 		elif cmd == "GET_AUDIT_LOGS":
-			"""Retrieve audit logs. Admin only."""
+			"""Retrieve audit logs in various categories. Admin only."""
 			if len(command_parts) < 2:
-				send_error(return_socket, "Invalid command format. Use: GET_AUDIT_LOGS <admin_username> [limit]")
+				send_error(return_socket, "Invalid command format. Use: GET_AUDIT_LOGS <admin_username> [log_type] [limit]")
 				return
 			
 			admin_username = command_parts[1]
@@ -841,21 +958,39 @@ def handle_request(request):
 			# Verify admin status
 			if _users.get(admin_username, {}).get("role") != "admin":
 				send_error(return_socket, "Only admins can view audit logs")
+				log_audit("GET_AUDIT_LOGS", admin_username, details="Unauthorized access attempt", success=False)
 				return
 			
+			log_type = command_parts[2] if len(command_parts) > 2 else "all"
 			limit = 100
-			if len(command_parts) > 2:
+			if len(command_parts) > 3:
 				try:
-					limit = int(command_parts[2])
+					limit = int(command_parts[3])
 				except ValueError:
 					pass
 			
-			# Return last 'limit' audit logs
-			logs = _audit_logs[-limit:] if limit > 0 else _audit_logs
-			send_json(return_socket, {
-				"total_logs": len(_audit_logs),
-				"logs": logs
-			})
+			# Prepare response based on log type
+			response = {
+				"total_login_logs": len(_login_audit_logs),
+				"total_moderator_logs": len(_moderator_audit_logs),
+				"total_post_logs": len(_post_audit_logs),
+				"total_request_logs": len(_moderator_request_logs),
+			}
+			
+			if log_type in ("all", "login"):
+				response["login_logs"] = _login_audit_logs[-limit:] if limit > 0 else _login_audit_logs
+			
+			if log_type in ("all", "moderator"):
+				response["moderator_logs"] = _moderator_audit_logs[-limit:] if limit > 0 else _moderator_audit_logs
+			
+			if log_type in ("all", "post"):
+				response["post_logs"] = _post_audit_logs[-limit:] if limit > 0 else _post_audit_logs
+			
+			if log_type in ("all", "request"):
+				response["request_logs"] = _moderator_request_logs[-limit:] if limit > 0 else _moderator_request_logs
+			
+			log_audit("GET_AUDIT_LOGS", admin_username, details=f"Retrieved {log_type} logs", success=True)
+			send_json(return_socket, response)
 		
 		elif cmd == "SEND_RECOVERY_EMAIL":
 			# Usage: SEND_RECOVERY_EMAIL <username> <email>
@@ -1028,10 +1163,13 @@ def main():
 	request_thread = threading.Thread(target=handle_requests, name="request_handler_thread", args=(), daemon=True)
 	request_thread.start()
 
-	# wait to get exit signal
-	while (exit == False):
-		pass
-
+	# wait to get exit signal with proper sleep
+	try:
+		while not exit:
+			time.sleep(0.1)  # Prevent busy-wait
+	except KeyboardInterrupt:
+		print("\nShutting down server...")
+	
 	sys.exit()
 
 
