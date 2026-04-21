@@ -1065,9 +1065,16 @@ def input_handler(sock):
 		return
 
 	elif command[0] == "myip":
-		import socket as sock_mod
-		hostname = sock_mod.gethostname()
-		hostip = sock_mod.gethostbyname(hostname)
+		# Get this server's IP by connecing to smth
+		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		try:
+			# Doesn't have to be reachable
+			s.connect(('8.8.8.8', 1))
+			hostip = s.getsockname()[0]
+		except Exception:
+			hostip = '127.0.0.1'
+		finally:
+			s.close()
 		print(f"IP address: {hostip}")
 		return
 	
@@ -1145,7 +1152,7 @@ def main():
 	# create a listening socket
 	port = int(sys.argv[1])
 	s = socket.socket()
-	s.bind(("", port))
+	s.bind(("0.0.0.0", port))
 	s = context.wrap_socket(s, server_side=True)
 	print("Hello. Created new process with listening port", port)
 
