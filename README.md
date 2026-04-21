@@ -8,8 +8,8 @@ A Reddit-inspired, group messaging board platform for CS 138 System Security. Bu
 #generate cert and server key
 python3 generate_cert.py
 
-# Start server in one terminal
-python3 server.py 1234
+# Start server in Docker 
+docker run -it -p 1234:1234 server
 
 # Start the GUI in another terminal
 python3 gui.py
@@ -80,6 +80,7 @@ python3 gui.py
 - **Python:** 3.8 or higher
 - **OS:** macOS, Linux, or Windows
 - **Database:** SQLite (included with Python)
+- **Containerization:** Docker 
 
 ### Python Dependencies
 ```
@@ -150,8 +151,15 @@ This creates `toString.db` with the necessary tables.
 
 ### Server Configuration
 
-The server runs on a configurable port (default: 1234).
+It is recommended that the server be run on a Docker instance. The server runs on a configurable port (default: 1234).
 
+### Starting a Docker instance
+```bash
+# Start server with interactive terminal on port 1234
+docker run -it -p 1234:1234 server
+```
+
+### Starting a local server
 ```bash
 # Start server on default port
 python3 server.py 1234
@@ -163,7 +171,7 @@ python3 server.py 5000
 **Port Requirements:**
 - Must be between 1024 and 65535
 - Ensure no firewall blocks the port
-- For network access, binding is available at 0.0.0.0
+- For network access, the default is bound to 0.0.0.0
 
 ### Client Configuration
 
