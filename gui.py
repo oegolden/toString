@@ -425,6 +425,11 @@ class App(tk.Tk):
 
     def logout(self):
         """Clear session and return to login screen."""
+        try:
+            client.logout(self.current_user)
+        except:
+            messagebox.showerror("Logout Failed", "Could not log out. Please try again.")
+            return
         self.current_user = None
         self.user_role     = None
         self._show_login()

@@ -46,6 +46,9 @@ def verify_password(stored: str, provided: str) -> bool:
 _next_user_id = 1
 _user_id_map = {}  # username -> user_id
 
+_live_users = {
+}
+
 _users = {
 	"alice":     {"password": hash_password("pass123"), "role": "user", "email": "alice@example.com", "user_id": 1},
 	"bob":       {"password": hash_password("pass456"), "role": "moderator", "email": "bob@example.com", "user_id": 2},
@@ -445,7 +448,17 @@ def handle_request(request):
 				log_login(username, client_ip, device_info, False, "User does not exist")
 				send_error(return_socket, "User does not exist")
 				return
-			
+			if username in _live_users:
+				log_login(username, client_ip, device_info, False, "User already logged in")
+				send_error(return_socket, "User already logged in")
+				return
+			else:
+				_live_users[username] = {
+					"login_time": time.time(),
+					"ip_address": client_ip,
+					"device_info": device_info
+				}
+
 			if not verify_password(_users[username]["password"], password):
 				log_login(username, client_ip, device_info, False, "Invalid password")
 				send_error(return_socket, "Invalid password")
@@ -456,6 +469,17 @@ def handle_request(request):
 				"username": username,
 				"role": _users[username]["role"]
 			})
+
+		elif cmd == "LOGOUT":
+			if len(command_parts) < 2:
+				send_error(return_socket, "Invalid command format. Use: LOGOUT <username>")
+				return
+			username = command_parts[1]
+			if username in _live_users:
+				del _live_users[username]
+				send_json(return_socket, {"success": True})
+			else:
+				send_error(return_socket, "User not logged in")
 
 		elif cmd == "REGISTER":
 			if len(command_parts) < 4:
