@@ -8,7 +8,8 @@ A Reddit-inspired, group messaging board platform for CS 138 System Security. Bu
 #generate cert and server key
 python3 generate_cert.py
 
-# Start server in Docker 
+# Build and start server in Docker 
+docker build -t server .
 docker run -it -p 1234:1234 server
 
 # Start the GUI in another terminal
@@ -151,11 +152,13 @@ This creates `toString.db` with the necessary tables.
 
 ### Server Configuration
 
-It is recommended that the server be run on a Docker instance. The server runs on a configurable port (default: 1234).
+It is recommended that the server be run on a Docker instance. Alternatively, the server can be run in a local terminal. The server runs on a configurable port (default: 1234).
 
 ### Starting a Docker instance
 ```bash
-# Start server with interactive terminal on port 1234
+# Build server container 
+docker build -t server .
+# Start server on port 1234
 docker run -it -p 1234:1234 server
 ```
 
