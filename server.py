@@ -495,9 +495,22 @@ def handle_request(request):
 			if len(password) < 4:
 				send_error(return_socket, "Password must be at least 4 characters")
 				return
+			
+			# Create the new user
 			hashed = hash_password(password)
-			_users[username] = {"password": hashed, "role": "user", "email": email}
+			new_user_id = max([_users[u].get("user_id", 0) for u in _users] + [0]) + 1
+			_users[username] = {"password": hashed, "role": "user", "email": email, "user_id": new_user_id}
+			_user_id_map[username] = new_user_id
 			_subscriptions[username] = set()
+			
+			# Auto-login the new user
+			_live_users[username] = {
+				"login_time": time.time(),
+				"ip_address": client_ip,
+				"device_info": device_info
+			}
+			
+			log_login(username, client_ip, device_info, True)
 			send_json(return_socket, {
 				"username": username,
 				"role": "user"
