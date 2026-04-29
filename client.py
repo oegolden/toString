@@ -13,8 +13,8 @@ import json
 import time
 import ssl
 
-# server configuration
-server_ip = '127.0.0.1'
+# # server configuration
+server_ip = '172.17.0.2'
 server_port = 1234
 
 # global socket
@@ -353,7 +353,9 @@ def init():
     """
     Initialize client connection to the server.
     """
-    connect()
+    ip = input("Enter server IP").strip()
+    port = int(input("Enter server port").strip())
+    connect(ip, port)
     
     # Example interactive shell
     print("Connected to server. Type 'exit' to quit.")
