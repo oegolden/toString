@@ -756,7 +756,7 @@ class LoginFrame(tk.Frame):
             
             info = tk.Label(
                 main_frame,
-                text="Check your email for the 6-digit code.",
+                text="Check your email for the recovery code.",
                 font=FONT_SMALL, fg=TEXT_SEC, bg=BG_MEDIUM
             )
             info.pack(anchor="w", pady=(10, 15))
@@ -1460,7 +1460,7 @@ class PostCard(tk.Frame):
             # Server enforces: only author or moderator/admin can delete
             client.delete_message(self.app.current_user,
                                   self.message["id"],
-                                  self.app.user_role)
+                                  self.board["id"])
             
             self.on_refresh()
         except Exception as e:
@@ -1639,7 +1639,7 @@ class PostView(tk.Frame):
         try:
             client.delete_message(self.app.current_user,
                                   self.message["id"],
-                                  self.app.user_role)
+                                  self.board["id"])
             self.on_back()
         except Exception as e:
             messagebox.showerror("Error", str(e))

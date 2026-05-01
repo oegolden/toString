@@ -664,6 +664,12 @@ def handle_request(request):
 			moderator = get_content_moderator()
 			flagged_harmful, flag_reason = moderator.moderate(content)
 			
+			if flagged_harmful:
+				send_error(return_socket, f"Comment violates content policy: {flag_reason}")
+				log_audit("POST_MESSAGE", username, details=f"Rejected content creation - harmful post: {content}", success=False)
+				return
+			
+			
 			msg = {
 				"id": _next_message_id,
 				"board_id": board_id,
@@ -700,6 +706,11 @@ def handle_request(request):
 			moderator = get_content_moderator()
 			flagged_harmful, flag_reason = moderator.moderate(new_content)
 			
+			if flagged_harmful:
+				send_error(return_socket, f"Comment violates content policy: {flag_reason}")
+				log_audit("EDIT_MESSAGE", username, details=f"Rejected content edit - harmful post: {new_content}", success=False)
+				return
+			
 			# Find and edit the message
 			for board_msgs in _messages.values():
 				for msg in board_msgs:
@@ -719,7 +730,7 @@ def handle_request(request):
 			if len(command_parts) < 4:
 				send_error(return_socket, "Invalid command format. Use: DELETE_MESSAGE <username> <message_id> <board_id>")
 				return
-			
+
 			username = command_parts[1]
 			try:
 				message_id = int(command_parts[2])
