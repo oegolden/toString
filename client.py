@@ -113,10 +113,12 @@ def logout(username: str) -> bool:
     Log out the user. Returns True on success.
     """
     command = f"LOGOUT {username}"
-    response = _send_request(command)
-    # Response should be JSON with a success indicator
-    data = _parse_json_response(response)
-    return data.get("success", True)
+    try:
+        response = _send_request(command)
+        data = _parse_json_response(response)
+        return data.get("success", True)
+    except Exception:
+        return True  # Treat as success — session is gone from client side regardless
 
 
 def register(username: str, password: str, email: str) -> dict:

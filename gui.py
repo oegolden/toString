@@ -600,10 +600,8 @@ class LoginFrame(tk.Frame):
             self.err_var.set("Passwords do not match.")
             return
 
-        # Check password strength (NIST-based)
         if self.password_checker:
             score, is_strong_enough = self.password_checker._on_password_change()
-            # Require at least "Fair" (score >= 2) — meets NIST baseline
             if not is_strong_enough:
                 self.err_var.set(
                     "Password does not meet NIST guidelines.\n"
@@ -612,8 +610,14 @@ class LoginFrame(tk.Frame):
                 )
                 return
 
-        # Proceed with registration...
         try:
+            # Clear any stale session first
+            try:
+                client.logout(self.app.current_user)
+            except:
+                pass
+
+            # Register returns user info just like login — use it directly
             result = client.register(username, password, email)
             self.app.on_login_success(result["username"], result["role"])
         except Exception as e:
@@ -626,15 +630,17 @@ class LoginFrame(tk.Frame):
             self.err_var.set("Please enter both username and password.")
             return
         try:
-            # ── BACKEND TO FIX ──────────────────────────────────────────────
-            # client.login() sends credentials over socket and returns:
-            # {"username": str, "role": "user"|"moderator"|"admin"}
+            # Clear any stale session before logging in
+            try:
+                client.logout(self.app.current_user)
+            except:
+                pass
+
             result = client.login(username, password)
-            # ─────────────────────────────────────────────────────────────
             self.app.on_login_success(result["username"], result["role"])
         except Exception as e:
             self.err_var.set(str(e))
-    
+            
     def _switch_tab(self, tab: str):
         self.tab_var.set(tab)
         self.err_var.set("")
@@ -1641,6 +1647,7 @@ class PostView(tk.Frame):
                                   self.message["id"],
                                   self.board["id"])
             self.on_back()
+            print(self.on_back())
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
