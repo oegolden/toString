@@ -1158,6 +1158,9 @@ def input_handler(sock):
 """ input_loop(): continuously handle user input
 """
 def input_loop(sock):
+	import sys
+	if not sys.stdin.isatty():
+		return
 	while not exit:
 		try:
 			input_handler(sock)

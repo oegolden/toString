@@ -23,4 +23,8 @@ def get_pool() -> aiosqlite.Connection:
 		raise RuntimeError("Pool not initialized. Call init_pool() first.")
 	return _pool
 
+def reset_pool():
+	global _pool
+	_pool = None
+
 
