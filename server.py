@@ -452,18 +452,17 @@ def handle_request(request):
 				log_login(username, client_ip, device_info, False, "User already logged in")
 				send_error(return_socket, "User already logged in")
 				return
-			else:
-				_live_users[username] = {
-					"login_time": time.time(),
-					"ip_address": client_ip,
-					"device_info": device_info
-				}
 
 			if not verify_password(_users[username]["password"], password):
 				log_login(username, client_ip, device_info, False, "Invalid password")
 				send_error(return_socket, "Invalid password")
 				return
-			
+
+			_live_users[username] = {
+				"login_time": time.time(),
+				"ip_address": client_ip,
+				"device_info": device_info
+			}
 			log_login(username, client_ip, device_info, True)
 			send_json(return_socket, {
 				"username": username,
