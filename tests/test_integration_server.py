@@ -37,23 +37,43 @@ def running_server():
 
 
 def test_login_and_get_boards(running_server):
-    """
-    Connect to the server, log in as alice, and fetch boards.
-
-    This keeps the assertions simple but still verifies that the basic
-    client/server path works end-to-end.
-    """
+    """Login succeeds and LIST_BOARDS returns a non-empty list."""
     client.connect("127.0.0.1", 9999)
     try:
-        # Login should succeed and return expected user info.
         user = client.login("alice", "pass123")
         assert user["username"] == "alice"
         assert user["role"] == "user"
 
-        # Getting all boards should return a non-empty list.
         boards = client.get_all_boards()
         assert isinstance(boards, list)
         assert len(boards) > 0
     finally:
+        client.logout("alice")
+        client.disconnect()
+
+
+def test_duplicate_login_rejected(running_server):
+    """A second login attempt while already logged in is rejected."""
+    client.connect("127.0.0.1", 9999)
+    try:
+        client.login("alice", "pass123")
+        with pytest.raises(Exception, match="already logged in"):
+            client.login("alice", "pass123")
+    finally:
+        client.logout("alice")
+        client.disconnect()
+
+
+def test_wrong_password_does_not_lock_account(running_server):
+    """A failed login (wrong password) must not prevent a subsequent correct login."""
+    client.connect("127.0.0.1", 9999)
+    try:
+        with pytest.raises(Exception, match="Invalid password"):
+            client.login("alice", "wrongpassword")
+        # Account must still be accessible with the correct password.
+        user = client.login("alice", "pass123")
+        assert user["username"] == "alice"
+    finally:
+        client.logout("alice")
         client.disconnect()
 

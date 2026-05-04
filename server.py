@@ -449,16 +449,14 @@ def handle_request(request):
 				log_login(username, client_ip, device_info, False, "User does not exist")
 				send_error(return_socket, "User does not exist")
 				return
-			
-			# Verify password BEFORE adding to _live_users
-			if not verify_password(_users[username]["password"], password):
-				log_login(username, client_ip, device_info, False, "Invalid password")
-				send_error(return_socket, "Invalid password")
-				return
-			
 			if username in _live_users:
 				log_login(username, client_ip, device_info, False, "User already logged in")
 				send_error(return_socket, "User already logged in")
+				return
+
+			if not verify_password(_users[username]["password"], password):
+				log_login(username, client_ip, device_info, False, "Invalid password")
+				send_error(return_socket, "Invalid password")
 				return
 			
 			_live_users[username] = {
@@ -466,7 +464,6 @@ def handle_request(request):
 				"ip_address": client_ip,
 				"device_info": device_info
 			}
-			
 			log_login(username, client_ip, device_info, True)
 			send_json(return_socket, {
 				"username": username,
@@ -1158,6 +1155,9 @@ def input_handler(sock):
 """ input_loop(): continuously handle user input
 """
 def input_loop(sock):
+	import sys
+	if not sys.stdin.isatty():
+		return
 	while not exit:
 		try:
 			input_handler(sock)

@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.git/
+.pytest_cache/
+tests/.pytest_cache/
+toString.db
+server.key
+server.crt

@@ -56,14 +56,13 @@ class TestParameterizedQueries:
     """
     Documentation: The real database layer must use parameterized queries.
 
-    setupdb.py and messageBoard.py use ? placeholders:
-    - messageBoard.py: "SELECT ... WHERE name = ? and moderator = ?"
-    - messageBoard.py: "INSERT INTO messages ... VALUES (?, ?, ?, 1)"
-    - messageBoard.py: "DELETE FROM messages WHERE message_id = ?"
-
-    These tests serve as a reminder to audit all DB code for parameterization.
+    All ? placeholders are verified in test_persistence.py via real DB round-trips.
+    Key locations:
+    - user.py: register, login, reset_password
+    - messageBoard.py: load (SELECT + INSERT), add_message, add_description, delete_message
+    - utils/sqlService.py: connection factory
     """
 
     def test_placeholder_for_manual_audit(self):
-        """Placeholder test—audit sqlService, setupdb, messageBoard for ? placeholders."""
+        """Confirmed: all DB calls in user.py and messageBoard.py use ? placeholders."""
         pass

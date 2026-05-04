@@ -1,17 +1,20 @@
-# Use an official Python base image
 FROM python:3.11-slim
 
-# Set working directory
 WORKDIR /server
 
-# Copy dependency list first (better caching)
+# Install dependencies first for better layer caching
 COPY requirements.txt .
-
-# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application
+# Copy application code
 COPY . .
 
-# Run the server.py listening on port 1234
-CMD ["python", "server.py", "1234"] 
+# Generate self-signed SSL certs and initialise the database schema
+RUN python generate_cert.py && python setupdb.py
+
+# Run the full test suite — build fails here if any test fails
+RUN python -m pytest
+
+EXPOSE 1234
+
+CMD ["python", "server.py", "1234"]
